@@ -146,7 +146,12 @@ app.post('/api/requests', (req, res) => {
   const { item_id, name, phone = '', email = '', note = '' } = req.body;
   if (!item_id) return res.status(400).json({ error: 'item_id is required' });
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
-  if (!phone.trim() && !email.trim()) return res.status(400).json({ error: 'phone or email is required' });
+  // Email carries the decision back to the customer, so it is the one contact
+  // detail a request cannot do without.
+  if (!email.trim()) return res.status(400).json({ error: 'email is required' });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+    return res.status(400).json({ error: 'that email does not look right' });
+  }
 
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(item_id);
   if (!item) return res.status(404).json({ error: 'item not found' });

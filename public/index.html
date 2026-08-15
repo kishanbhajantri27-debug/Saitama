@@ -50,11 +50,11 @@
     <label>Your name
       <input id="notifyName" type="text" placeholder="Full name">
     </label>
-    <label>Phone
-      <input id="notifyPhone" type="tel" placeholder="Phone number">
+    <label>Phone (optional)
+      <input id="notifyPhone" type="tel" placeholder="Phone number (optional)">
     </label>
-    <label>Email
-      <input id="notifyEmail" type="email" placeholder="Email (optional if phone given)">
+    <label>Email (required)
+      <input id="notifyEmail" type="email" placeholder="you@example.com">
     </label>
     <p class="msg" id="notifyMsg"></p>
     <div class="row">
@@ -78,11 +78,11 @@
       <label>Your name
         <input id="detailNotifyName" type="text" placeholder="Full name">
       </label>
-      <label>Phone
-        <input id="detailNotifyPhone" type="tel" placeholder="Phone number">
+      <label>Phone (optional)
+        <input id="detailNotifyPhone" type="tel" placeholder="Phone number (optional)">
       </label>
-      <label>Email
-        <input id="detailNotifyEmail" type="email" placeholder="Email (optional if phone given)">
+      <label>Email (required)
+        <input id="detailNotifyEmail" type="email" placeholder="you@example.com">
       </label>
       <p class="msg" id="detailNotifyMsg"></p>
       <button id="detailNotifySubmit">Send request</button>
@@ -299,7 +299,11 @@ async function submitRequest({ nameId, phoneId, emailId, msgId, onDone }) {
   const msgEl = document.getElementById(msgId);
 
   if (!name) { msgEl.textContent = 'Please enter your name.'; msgEl.className = 'msg err'; return; }
-  if (!phone && !email) { msgEl.textContent = 'Please enter a phone or email.'; msgEl.className = 'msg err'; return; }
+  if (!email) {
+    msgEl.textContent = 'Please enter your email — that is where we send the reply.';
+    msgEl.className = 'msg err';
+    return;
+  }
 
   const res = await fetch('/api/requests', {
     method: 'POST',
