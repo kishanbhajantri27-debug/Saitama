@@ -19,6 +19,11 @@
 </header>
 
 <main>
+  <div class="searchbar">
+    <input id="search" type="search" placeholder="Search items…" autocomplete="off">
+    <button class="clear" id="searchClear" style="display:none" aria-label="Clear search">×</button>
+  </div>
+
   <div id="chips" class="chips"></div>
 
   <section class="block">
@@ -87,6 +92,7 @@
 let activeItemId = null;
 let allItems = [];
 let activeCategory = null;
+let searchQuery = '';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -133,18 +139,29 @@ function setCategory(cat) {
   renderGrids();
 }
 
+function matchesSearch(item) {
+  if (!searchQuery) return true;
+  return [item.name, item.description, item.category]
+    .some(field => String(field ?? '').toLowerCase().includes(searchQuery));
+}
+
 function renderGrids() {
-  const filtered = activeCategory ? allItems.filter(i => i.category === activeCategory) : allItems;
+  const filtered = allItems
+    .filter(i => !activeCategory || i.category === activeCategory)
+    .filter(matchesSearch);
   const available = filtered.filter(i => i.status === 'available');
   const upcoming = filtered.filter(i => i.status === 'upcoming');
+  const searching = Boolean(searchQuery);
 
   document.getElementById('available').innerHTML = available.length
     ? available.map(itemCard).join('')
-    : '<p class="empty">No items available right now.</p>';
+    : `<p class="empty">${searching ? 'No matching items in stock.' : 'No items available right now.'}</p>`;
 
   document.getElementById('upcoming').innerHTML = upcoming.length
     ? upcoming.map(itemCard).join('')
-    : '<p class="empty">Nothing upcoming right now — check back soon.</p>';
+    : `<p class="empty">${searching ? 'No matching items coming soon.' : 'Nothing upcoming right now — check back soon.'}</p>`;
+
+  document.getElementById('searchClear').style.display = searching ? '' : 'none';
 }
 
 async function loadItems() {
@@ -292,6 +309,26 @@ document.getElementById('detailNotifySubmit').addEventListener('click', async ()
     msgEl.className = 'msg err';
   }
 });
+
+const searchEl = document.getElementById('search');
+
+searchEl.addEventListener('input', () => {
+  searchQuery = searchEl.value.trim().toLowerCase();
+  renderGrids();
+});
+
+searchEl.addEventListener('keydown', e => {
+  if (e.key === 'Escape') clearSearch();
+});
+
+document.getElementById('searchClear').addEventListener('click', clearSearch);
+
+function clearSearch() {
+  searchEl.value = '';
+  searchQuery = '';
+  renderGrids();
+  searchEl.focus();
+}
 
 loadSettings();
 loadItems();

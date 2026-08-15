@@ -94,6 +94,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .empty { color: var(--muted); font-size: 0.9rem; }
 
+.searchbar { position: relative; margin-bottom: 16px; max-width: 420px; }
+.searchbar input {
+  width: 100%; padding: 10px 34px 10px 14px; font-size: 0.92rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); color: var(--ink);
+}
+.searchbar input:focus { outline: none; border-color: var(--accent); }
+.searchbar input::-webkit-search-cancel-button { display: none; }
+.searchbar .clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: transparent; color: var(--muted); font-size: 1.2rem;
+  line-height: 1; padding: 4px 8px;
+}
+.searchbar .clear:hover { color: var(--ink); }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .chip {
   background: var(--panel); border: 1px solid var(--border); color: var(--ink);
