@@ -7,12 +7,14 @@ Two surfaces over one Node server:
 
 A customer never edits anything except their own contact details. Item name and price are fixed once listed: changing a listing someone has already seen is a delete and re-add, not an in-place edit.
 
+Python (Flask) backend over SQLite. The API is plain HTTP/JSON, so anything can be a client — the browser apps here, or a Flet desktop app.
+
 ## Running it
 
 ```bash
-npm install
+pip install -r requirements.txt
 cp .env.example .env      # then fill it in
-node server.js
+python app.py
 ```
 
 Open <http://localhost:3000>. The owner app is at `/admin.html` and asks for the `ADMIN_USER` / `ADMIN_PASS` from your `.env`.
@@ -25,12 +27,27 @@ Decision emails need SMTP settings in `.env`. Without them the app still runs: m
 
 | Path | What it holds |
 |---|---|
-| `server.js` | All HTTP routes and auth |
-| `db.js` | SQLite schema and migrations |
-| `mailer.js` | Decision emails |
+| `app.py` | All HTTP routes and auth |
+| `db.py` | SQLite schema and migrations |
+| `mailer.py` | Decision emails |
 | `public/index.html` | Customer app |
 | `public/admin.html` | Owner app |
 | `public/style.css` | Shared styling |
+
+### Talking to the API from Flet
+
+The owner app can be a Flet client instead of `admin.html` — the endpoints are the same either way. Admin routes use HTTP Basic auth:
+
+```python
+import requests
+AUTH = ("shopowner", "your-password")
+API = "http://localhost:3000"
+
+pending = requests.get(f"{API}/api/requests", params={"status": "pending"}, auth=AUTH).json()
+requests.put(f"{API}/api/requests/{pending[0]['id']}", json={"status": "approved"}, auth=AUTH)
+```
+
+Run one server. Two processes opening the same SQLite file will corrupt it under concurrent writes, so the Flet app should call the API rather than open `data/shop.db` itself.
 
 The database lives in `data/` and is gitignored. A fresh clone starts with an empty catalog — that is expected. Never commit the `.db` file; SQLite files conflict badly in git.
 
@@ -42,13 +59,13 @@ Branches:
 - `parent-app` — the owner app.
 - `student-app` — the customer app.
 
-The two apps are not separate codebases; they share `server.js`, `db.js`, and `style.css`. Splitting the work by **file** rather than by feature is what keeps merges cheap:
+The two apps are not separate codebases; they share `app.py`, `db.py`, and `style.css`. Splitting the work by **file** rather than by feature is what keeps merges cheap:
 
-- Owner app work stays in `public/admin.html`.
+- Owner app work stays in `public/admin.html`, or in the Flet client.
 - Customer app work stays in `public/index.html`.
-- `server.js`, `db.js`, and `style.css` are shared. Say so before you change them.
+- `app.py`, `db.py`, and `style.css` are shared. Say so before you change them.
 
-`db.js` is the sharpest edge. Two people adding different columns to the same table will conflict every time, and a half-applied schema change breaks the other person's database rather than just their merge. Agree on schema changes before writing them.
+`db.py` is the sharpest edge. Two people adding different columns to the same table will conflict every time, and a half-applied schema change breaks the other person's database rather than just their merge. Agree on schema changes before writing them.
 
 Start work from an up-to-date `main`:
 
