@@ -30,11 +30,14 @@ CREATE TABLE IF NOT EXISTS customers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS waitlist (
+CREATE TABLE IF NOT EXISTS requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK(status IN ('pending','approved','declined')) DEFAULT 'pending',
+  note TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  responded_at TEXT,
   UNIQUE(item_id, customer_id)
 );
 
@@ -52,5 +55,21 @@ CREATE TABLE IF NOT EXISTS shop_settings (
 `);
 
 db.prepare('INSERT OR IGNORE INTO shop_settings (id) VALUES (1)').run();
+
+// The waitlist table predates approvals: every signup was implicitly pending.
+// Carry those rows into requests as pending, then retire the old table. Guarded
+// so it is a no-op on databases created after this change.
+const hasWaitlist = db.prepare(
+  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'waitlist'"
+).get();
+if (hasWaitlist) {
+  db.transaction(() => {
+    db.prepare(
+      `INSERT OR IGNORE INTO requests (item_id, customer_id, status, created_at)
+       SELECT item_id, customer_id, 'pending', created_at FROM waitlist`
+    ).run();
+    db.prepare('DROP TABLE waitlist').run();
+  })();
+}
 
 module.exports = db;

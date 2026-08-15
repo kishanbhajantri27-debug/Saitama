@@ -93,18 +93,20 @@ app.delete('/api/items/:id', requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
-// Counts for every item in one query, so the admin table does not fire a
-// separate waitlist request per row.
-app.get('/api/waitlist/counts', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT item_id, COUNT(*) AS count FROM waitlist GROUP BY item_id').all();
+// Pending counts for every item in one query, so the admin table does not fire
+// a separate request per row.
+app.get('/api/requests/counts', requireAdmin, (req, res) => {
+  const rows = db.prepare(
+    "SELECT item_id, COUNT(*) AS count FROM requests WHERE status = 'pending' GROUP BY item_id"
+  ).all();
   res.json(Object.fromEntries(rows.map(r => [r.item_id, r.count])));
 });
 
-app.get('/api/items/:id/waitlist', requireAdmin, (req, res) => {
+app.get('/api/items/:id/requests', requireAdmin, (req, res) => {
   const rows = db.prepare(
-    `SELECT c.id, c.name, c.phone, c.email, w.created_at
-     FROM waitlist w JOIN customers c ON c.id = w.customer_id
-     WHERE w.item_id = ? ORDER BY w.created_at ASC`
+    `SELECT c.id, c.name, c.phone, c.email, r.status, r.created_at
+     FROM requests r JOIN customers c ON c.id = r.customer_id
+     WHERE r.item_id = ? ORDER BY r.created_at ASC`
   ).all(req.params.id);
   res.json(rows);
 });
@@ -115,8 +117,8 @@ app.get('/api/customers', requireAdmin, (req, res) => {
   const rows = db.prepare(
     `SELECT c.*, GROUP_CONCAT(i.name, ', ') AS interests
      FROM customers c
-     LEFT JOIN waitlist w ON w.customer_id = c.id
-     LEFT JOIN items i ON i.id = w.item_id
+     LEFT JOIN requests r ON r.customer_id = c.id
+     LEFT JOIN items i ON i.id = r.item_id
      GROUP BY c.id
      ORDER BY c.created_at DESC`
   ).all();
@@ -137,10 +139,10 @@ app.put('/api/customers/:id', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id));
 });
 
-// ---------- Waitlist (notify me for upcoming items) ----------
+// ---------- Requests (customer asks, business owner approves) ----------
 
-app.post('/api/waitlist', (req, res) => {
-  const { item_id, name, phone = '', email = '' } = req.body;
+app.post('/api/requests', (req, res) => {
+  const { item_id, name, phone = '', email = '', note = '' } = req.body;
   if (!item_id) return res.status(400).json({ error: 'item_id is required' });
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   if (!phone.trim() && !email.trim()) return res.status(400).json({ error: 'phone or email is required' });
@@ -156,8 +158,55 @@ app.post('/api/waitlist', (req, res) => {
     customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(info.lastInsertRowid);
   }
 
-  db.prepare('INSERT OR IGNORE INTO waitlist (item_id, customer_id) VALUES (?, ?)').run(item.id, customer.id);
+  // Re-requesting an item already decided on reopens it as pending, so a
+  // customer is never stuck with a stale decline they cannot ask about again.
+  db.prepare(
+    `INSERT INTO requests (item_id, customer_id, note) VALUES (?, ?, ?)
+     ON CONFLICT(item_id, customer_id) DO UPDATE SET
+       status = 'pending', note = excluded.note, created_at = datetime('now'), responded_at = NULL`
+  ).run(item.id, customer.id, note.trim());
+
   res.status(201).json({ ok: true, customer_id: customer.id });
+});
+
+// A customer's own requests. Their id comes from the browser after they first
+// ask for something -- enough to show status back to them, and it exposes only
+// that one customer's rows.
+app.get('/api/requests/mine/:customerId', (req, res) => {
+  const rows = db.prepare(
+    `SELECT r.id, r.status, r.created_at, r.responded_at, i.name AS item_name, i.status AS item_status
+     FROM requests r JOIN items i ON i.id = r.item_id
+     WHERE r.customer_id = ? ORDER BY r.created_at DESC`
+  ).all(req.params.customerId);
+  res.json(rows);
+});
+
+app.get('/api/requests', requireAdmin, (req, res) => {
+  const { status } = req.query;
+  const base =
+    `SELECT r.id, r.status, r.note, r.created_at, r.responded_at,
+            i.name AS item_name, i.status AS item_status,
+            c.name AS customer_name, c.phone, c.email
+     FROM requests r
+     JOIN items i ON i.id = r.item_id
+     JOIN customers c ON c.id = r.customer_id`;
+  const rows = status
+    ? db.prepare(`${base} WHERE r.status = ? ORDER BY r.created_at DESC`).all(status)
+    : db.prepare(`${base} ORDER BY r.created_at DESC`).all();
+  res.json(rows);
+});
+
+app.put('/api/requests/:id', requireAdmin, (req, res) => {
+  const { status } = req.body;
+  if (!['pending', 'approved', 'declined'].includes(status)) {
+    return res.status(400).json({ error: 'status must be pending, approved or declined' });
+  }
+  const info = db.prepare(
+    `UPDATE requests SET status = ?, responded_at = CASE WHEN ? = 'pending' THEN NULL ELSE datetime('now') END
+     WHERE id = ?`
+  ).run(status, status, req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: 'request not found' });
+  res.json(db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.id));
 });
 
 // ---------- Shop settings ----------

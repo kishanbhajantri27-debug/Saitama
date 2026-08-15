@@ -26,6 +26,8 @@
 
   <div id="chips" class="chips"></div>
 
+  <section class="block" id="myRequests"></section>
+
   <section class="block">
     <h2>Available Now</h2>
     <div id="available" class="grid"></div>
@@ -41,7 +43,7 @@
 
 <div id="overlay" class="overlay hidden">
   <div class="modal">
-    <h3>Notify me</h3>
+    <h3>Request this item</h3>
     <p class="empty" id="modalItemName"></p>
     <label>Your name
       <input id="notifyName" type="text" placeholder="Full name">
@@ -55,7 +57,7 @@
     <p class="msg" id="notifyMsg"></p>
     <div class="row">
       <button class="secondary" id="notifyCancel">Cancel</button>
-      <button id="notifySubmit">Notify me</button>
+      <button id="notifySubmit">Send request</button>
     </div>
   </div>
 </div>
@@ -68,6 +70,7 @@
     <p class="category" id="detailCategory"></p>
     <p id="detailDescription"></p>
     <p class="price" id="detailPrice"></p>
+    <p id="detailReqState" style="display:none"></p>
     <div id="detailNotify" style="display:none;">
       <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
       <label>Your name
@@ -80,7 +83,7 @@
         <input id="detailNotifyEmail" type="email" placeholder="Email (optional if phone given)">
       </label>
       <p class="msg" id="detailNotifyMsg"></p>
-      <button id="detailNotifySubmit">Notify me</button>
+      <button id="detailNotifySubmit">Send request</button>
     </div>
     <div class="row">
       <button class="secondary" id="detailClose">Close</button>
@@ -94,6 +97,32 @@ let allItems = [];
 let activeCategory = null;
 let searchQuery = '';
 
+// Who this browser belongs to. Set the first time someone asks for something,
+// and it is all the customer app needs to show their own decisions back to
+// them -- no account, no password.
+let myCustomerId = localStorage.getItem('customerId');
+let myRequests = [];
+
+const REQUEST_LABELS = { pending: 'Requested — awaiting reply', approved: 'Approved', declined: 'Declined' };
+function requestLabel(status) { return REQUEST_LABELS[status] || status; }
+
+async function loadMyRequests() {
+  if (!myCustomerId) { myRequests = []; return; }
+  myRequests = await fetch(`/api/requests/mine/${myCustomerId}`).then(r => r.json()).catch(() => []);
+  renderMyRequests();
+}
+
+function renderMyRequests() {
+  const panel = document.getElementById('myRequests');
+  if (!myRequests.length) { panel.innerHTML = ''; return; }
+  panel.innerHTML = `<h2>Your requests</h2><ul class="reqlist">${
+    myRequests.map(r => `<li>
+      <span class="reqname">${esc(r.item_name)}</span>
+      <span class="reqstate ${r.status}">${requestLabel(r.status)}</span>
+    </li>`).join('')
+  }</ul>`;
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -106,9 +135,12 @@ function itemCard(item) {
   const badge = item.status === 'upcoming'
     ? '<span class="badge upcoming">Coming Soon</span>'
     : '<span class="badge available">Available</span>';
-  const action = item.status === 'upcoming'
-    ? `<button onclick="event.stopPropagation(); openNotify(${item.id}, '${esc(item.name).replace(/'/g, "\\'")}')">Notify me</button>`
-    : '';
+  const mine = myRequests.find(r => r.item_name === item.name);
+  const action = mine
+    ? `<span class="reqstate ${mine.status}">${requestLabel(mine.status)}</span>`
+    : `<button onclick="event.stopPropagation(); openNotify(${item.id}, '${esc(item.name).replace(/'/g, "\\'")}')">${
+        item.status === 'upcoming' ? 'Request when it lands' : 'Request'
+      }</button>`;
   return `<div class="card" onclick="openDetail(${item.id})">
     ${img}
     <div class="body">
@@ -218,31 +250,44 @@ function closeNotify() {
 
 document.getElementById('notifyCancel').addEventListener('click', closeNotify);
 
-document.getElementById('notifySubmit').addEventListener('click', async () => {
-  const name = document.getElementById('notifyName').value.trim();
-  const phone = document.getElementById('notifyPhone').value.trim();
-  const email = document.getElementById('notifyEmail').value.trim();
-  const msgEl = document.getElementById('notifyMsg');
+// Both the card button and the detail view collect the same three fields and
+// post the same request, so they share this.
+async function submitRequest({ nameId, phoneId, emailId, msgId, onDone }) {
+  const name = document.getElementById(nameId).value.trim();
+  const phone = document.getElementById(phoneId).value.trim();
+  const email = document.getElementById(emailId).value.trim();
+  const msgEl = document.getElementById(msgId);
 
   if (!name) { msgEl.textContent = 'Please enter your name.'; msgEl.className = 'msg err'; return; }
   if (!phone && !email) { msgEl.textContent = 'Please enter a phone or email.'; msgEl.className = 'msg err'; return; }
 
-  const res = await fetch('/api/waitlist', {
+  const res = await fetch('/api/requests', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ item_id: activeItemId, name, phone, email })
   });
 
-  if (res.ok) {
-    msgEl.textContent = "You're on the list! We'll let you know.";
-    msgEl.className = 'msg ok';
-    setTimeout(closeNotify, 1200);
-  } else {
+  if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     msgEl.textContent = data.error || 'Something went wrong.';
     msgEl.className = 'msg err';
+    return;
   }
-});
+
+  const data = await res.json();
+  myCustomerId = String(data.customer_id);
+  localStorage.setItem('customerId', myCustomerId);
+  msgEl.textContent = 'Request sent. You will see the reply here.';
+  msgEl.className = 'msg ok';
+  await loadMyRequests();
+  renderGrids();
+  setTimeout(onDone, 1200);
+}
+
+document.getElementById('notifySubmit').addEventListener('click', () => submitRequest({
+  nameId: 'notifyName', phoneId: 'notifyPhone', emailId: 'notifyEmail',
+  msgId: 'notifyMsg', onDone: closeNotify
+}));
 
 // ---------- Item detail modal ----------
 
@@ -263,15 +308,22 @@ function openDetail(itemId) {
   document.getElementById('detailDescription').textContent = item.description || '';
   document.getElementById('detailPrice').textContent = item.price ? `₹${Number(item.price).toFixed(2)}` : '';
 
+  // Already asked for this one: show where it stands instead of the form.
   const notifyBlock = document.getElementById('detailNotify');
-  if (item.status === 'upcoming') {
+  const stateEl = document.getElementById('detailReqState');
+  const already = myRequests.find(r => r.item_name === item.name);
+  if (already) {
+    notifyBlock.style.display = 'none';
+    stateEl.className = `reqstate ${already.status}`;
+    stateEl.textContent = requestLabel(already.status);
+    stateEl.style.display = '';
+  } else {
+    stateEl.style.display = 'none';
     notifyBlock.style.display = '';
     document.getElementById('detailNotifyName').value = '';
     document.getElementById('detailNotifyPhone').value = '';
     document.getElementById('detailNotifyEmail').value = '';
     document.getElementById('detailNotifyMsg').textContent = '';
-  } else {
-    notifyBlock.style.display = 'none';
   }
 
   document.getElementById('detailOverlay').classList.remove('hidden');
@@ -284,31 +336,10 @@ function closeDetail() {
 
 document.getElementById('detailClose').addEventListener('click', closeDetail);
 
-document.getElementById('detailNotifySubmit').addEventListener('click', async () => {
-  const name = document.getElementById('detailNotifyName').value.trim();
-  const phone = document.getElementById('detailNotifyPhone').value.trim();
-  const email = document.getElementById('detailNotifyEmail').value.trim();
-  const msgEl = document.getElementById('detailNotifyMsg');
-
-  if (!name) { msgEl.textContent = 'Please enter your name.'; msgEl.className = 'msg err'; return; }
-  if (!phone && !email) { msgEl.textContent = 'Please enter a phone or email.'; msgEl.className = 'msg err'; return; }
-
-  const res = await fetch('/api/waitlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ item_id: activeItemId, name, phone, email })
-  });
-
-  if (res.ok) {
-    msgEl.textContent = "You're on the list! We'll let you know.";
-    msgEl.className = 'msg ok';
-    setTimeout(closeDetail, 1200);
-  } else {
-    const data = await res.json().catch(() => ({}));
-    msgEl.textContent = data.error || 'Something went wrong.';
-    msgEl.className = 'msg err';
-  }
-});
+document.getElementById('detailNotifySubmit').addEventListener('click', () => submitRequest({
+  nameId: 'detailNotifyName', phoneId: 'detailNotifyPhone', emailId: 'detailNotifyEmail',
+  msgId: 'detailNotifyMsg', onDone: closeDetail
+}));
 
 const searchEl = document.getElementById('search');
 
@@ -331,7 +362,7 @@ function clearSearch() {
 }
 
 loadSettings();
-loadItems();
+loadMyRequests().then(loadItems);
 </script>
 </body>
 </html>

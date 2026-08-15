@@ -91,10 +91,21 @@
   </section>
 
   <section class="block">
+    <h2>Requests</h2>
+    <div class="chips" id="reqFilter"></div>
+    <table id="requestsTable">
+      <thead>
+        <tr><th>Customer</th><th>Contact</th><th>Item</th><th>Asked</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody id="requestsBody"></tbody>
+    </table>
+  </section>
+
+  <section class="block">
     <h2>Items</h2>
     <table id="itemsTable">
       <thead>
-        <tr><th>Name</th><th>Category</th><th>Price</th><th>Status</th><th>Waitlist</th><th></th></tr>
+        <tr><th>Name</th><th>Category</th><th>Price</th><th>Status</th><th>Pending</th><th></th></tr>
       </thead>
       <tbody id="itemsBody"></tbody>
     </table>
@@ -119,7 +130,7 @@ function esc(s) {
 async function loadItems() {
   const [items, counts] = await Promise.all([
     fetch('/api/items').then(r => r.json()),
-    fetch('/api/waitlist/counts').then(r => r.json())
+    fetch('/api/requests/counts').then(r => r.json())
   ]);
   const body = document.getElementById('itemsBody');
   if (!items.length) {
@@ -127,7 +138,7 @@ async function loadItems() {
     return;
   }
   const rows = items.map(item => {
-    const waitlistCount = item.status === 'upcoming' ? (counts[item.id] || 0) : null;
+    const pendingCount = item.status === 'upcoming' ? (counts[item.id] || 0) : null;
     return `<tr>
       <td>${esc(item.name)}</td>
       <td>${esc(item.category)}</td>
@@ -138,7 +149,7 @@ async function loadItems() {
           <option value="upcoming" ${item.status === 'upcoming' ? 'selected' : ''}>Upcoming</option>
         </select>
       </td>
-      <td>${waitlistCount === null ? '—' : waitlistCount}</td>
+      <td>${pendingCount === null ? '—' : pendingCount}</td>
       <td class="inline-actions">
         <button class="danger" onclick="deleteItem(${item.id})">Delete</button>
       </td>
@@ -162,6 +173,47 @@ async function loadCustomers() {
         </td>
       </tr>`).join('')
     : '<tr><td colspan="6" class="empty">No customers yet.</td></tr>';
+}
+
+let reqFilter = 'pending';
+
+async function loadRequests() {
+  const url = reqFilter === 'all' ? '/api/requests' : `/api/requests?status=${reqFilter}`;
+  const rows = await fetch(url).then(r => r.json());
+
+  document.getElementById('reqFilter').innerHTML = ['pending', 'approved', 'declined', 'all']
+    .map(f => `<button class="chip ${reqFilter === f ? 'active' : ''}" onclick="setReqFilter('${f}')">${
+      f[0].toUpperCase() + f.slice(1)
+    }</button>`).join('');
+
+  const body = document.getElementById('requestsBody');
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">No ${reqFilter === 'all' ? '' : reqFilter + ' '}requests.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => `<tr>
+    <td>${esc(r.customer_name)}</td>
+    <td>${esc(r.phone || r.email)}</td>
+    <td>${esc(r.item_name)}${r.item_status === 'upcoming' ? ' <span class="badge upcoming">Coming Soon</span>' : ''}</td>
+    <td>${esc((r.created_at || '').slice(0, 16))}</td>
+    <td><span class="reqstate ${r.status}">${esc(r.status)}</span></td>
+    <td class="inline-actions">
+      ${r.status !== 'approved' ? `<button onclick="decide(${r.id}, 'approved')">Approve</button>` : ''}
+      ${r.status !== 'declined' ? `<button class="danger" onclick="decide(${r.id}, 'declined')">Decline</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+function setReqFilter(f) { reqFilter = f; loadRequests(); }
+
+async function decide(id, status) {
+  await fetch(`/api/requests/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+  loadRequests();
+  loadItems();
 }
 
 async function saveCustomer(id, btn) {
@@ -264,6 +316,7 @@ document.getElementById('settingsSave').addEventListener('click', async () => {
 });
 
 loadSettings();
+loadRequests();
 loadItems();
 loadCustomers();
 </script>

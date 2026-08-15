@@ -94,6 +94,22 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .empty { color: var(--muted); font-size: 0.9rem; }
 
+.reqstate {
+  display: inline-block; font-size: 0.75rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px; width: fit-content; text-transform: capitalize;
+}
+.reqstate.pending  { background: #fbf0d9; color: var(--upcoming); }
+.reqstate.approved { background: #e4f2e9; color: var(--accent); }
+.reqstate.declined { background: #f7e4e4; color: var(--danger); }
+
+.reqlist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.reqlist li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+}
+.reqlist .reqname { font-weight: 600; font-size: 0.9rem; }
+
 .searchbar { position: relative; margin-bottom: 16px; max-width: 420px; }
 .searchbar input {
   width: 100%; padding: 10px 34px 10px 14px; font-size: 0.92rem;
