@@ -93,6 +93,13 @@ app.delete('/api/items/:id', requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
+// Counts for every item in one query, so the admin table does not fire a
+// separate waitlist request per row.
+app.get('/api/waitlist/counts', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT item_id, COUNT(*) AS count FROM waitlist GROUP BY item_id').all();
+  res.json(Object.fromEntries(rows.map(r => [r.item_id, r.count])));
+});
+
 app.get('/api/items/:id/waitlist', requireAdmin, (req, res) => {
   const rows = db.prepare(
     `SELECT c.id, c.name, c.phone, c.email, w.created_at
@@ -105,7 +112,14 @@ app.get('/api/items/:id/waitlist', requireAdmin, (req, res) => {
 // ---------- Customers ----------
 
 app.get('/api/customers', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all();
+  const rows = db.prepare(
+    `SELECT c.*, GROUP_CONCAT(i.name, ', ') AS interests
+     FROM customers c
+     LEFT JOIN waitlist w ON w.customer_id = c.id
+     LEFT JOIN items i ON i.id = w.item_id
+     GROUP BY c.id
+     ORDER BY c.created_at DESC`
+  ).all();
   res.json(rows);
 });
 

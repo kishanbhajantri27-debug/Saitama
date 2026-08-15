@@ -141,4 +141,11 @@ tr:last-child td { border-bottom: none; }
 .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 24px; }
 .inline-actions { display: flex; gap: 6px; }
+input.cell {
+  width: 100%; min-width: 90px; padding: 6px 8px; font-size: 0.85rem;
+  border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit;
+}
+input.cell:hover { border-color: var(--border); }
+input.cell:focus { border-color: var(--accent); background: var(--panel); outline: none; }
+td.interests { color: var(--muted); font-size: 0.82rem; max-width: 200px; }
 details summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }

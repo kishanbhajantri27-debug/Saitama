@@ -104,7 +104,7 @@
     <h2>Customers</h2>
     <table id="customersTable">
       <thead>
-        <tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th></tr>
+        <tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th><th>Waiting on</th><th></th></tr>
       </thead>
       <tbody id="customersBody"></tbody>
     </table>
@@ -117,16 +117,17 @@ function esc(s) {
 }
 
 async function loadItems() {
-  const items = await fetch('/api/items').then(r => r.json());
+  const [items, counts] = await Promise.all([
+    fetch('/api/items').then(r => r.json()),
+    fetch('/api/waitlist/counts').then(r => r.json())
+  ]);
   const body = document.getElementById('itemsBody');
   if (!items.length) {
     body.innerHTML = '<tr><td colspan="6" class="empty">No items yet.</td></tr>';
     return;
   }
-  const rows = await Promise.all(items.map(async item => {
-    const waitlistCount = item.status === 'upcoming'
-      ? (await fetch(`/api/items/${item.id}/waitlist`).then(r => r.json())).length
-      : null;
+  const rows = items.map(item => {
+    const waitlistCount = item.status === 'upcoming' ? (counts[item.id] || 0) : null;
     return `<tr>
       <td>${esc(item.name)}</td>
       <td>${esc(item.category)}</td>
@@ -142,7 +143,7 @@ async function loadItems() {
         <button class="danger" onclick="deleteItem(${item.id})">Delete</button>
       </td>
     </tr>`;
-  }));
+  });
   body.innerHTML = rows.join('');
 }
 
@@ -150,13 +151,33 @@ async function loadCustomers() {
   const customers = await fetch('/api/customers').then(r => r.json());
   const body = document.getElementById('customersBody');
   body.innerHTML = customers.length
-    ? customers.map(c => `<tr>
-        <td>${esc(c.name)}</td>
-        <td>${esc(c.phone)}</td>
-        <td>${esc(c.email)}</td>
-        <td>${esc(c.notes)}</td>
+    ? customers.map(c => `<tr data-customer="${c.id}">
+        <td><input class="cell" data-field="name" value="${esc(c.name)}"></td>
+        <td><input class="cell" data-field="phone" value="${esc(c.phone)}"></td>
+        <td><input class="cell" data-field="email" value="${esc(c.email)}"></td>
+        <td><input class="cell" data-field="notes" value="${esc(c.notes)}" placeholder="Add a note"></td>
+        <td class="interests">${esc(c.interests || '—')}</td>
+        <td class="inline-actions">
+          <button onclick="saveCustomer(${c.id}, this)">Save</button>
+        </td>
       </tr>`).join('')
-    : '<tr><td colspan="4" class="empty">No customers yet.</td></tr>';
+    : '<tr><td colspan="6" class="empty">No customers yet.</td></tr>';
+}
+
+async function saveCustomer(id, btn) {
+  const row = document.querySelector(`tr[data-customer="${id}"]`);
+  const payload = {};
+  row.querySelectorAll('input.cell').forEach(input => { payload[input.dataset.field] = input.value.trim(); });
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  const res = await fetch(`/api/customers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  btn.textContent = res.ok ? 'Saved' : 'Failed';
+  setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1200);
 }
 
 async function updateStatus(id, status) {
