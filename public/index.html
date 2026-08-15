@@ -19,6 +19,8 @@
 </header>
 
 <main>
+  <div id="notice" class="notice hidden"></div>
+
   <div class="searchbar">
     <input id="search" type="search" placeholder="Search items…" autocomplete="off">
     <button class="clear" id="searchClear" style="display:none" aria-label="Clear search">×</button>
@@ -110,6 +112,44 @@ async function loadMyRequests() {
   if (!myCustomerId) { myRequests = []; return; }
   myRequests = await fetch(`/api/requests/mine/${myCustomerId}`).then(r => r.json()).catch(() => []);
   renderMyRequests();
+  renderNotice();
+}
+
+// A decision the customer has not acknowledged yet.
+function unseenDecisions() {
+  return myRequests.filter(r => r.status !== 'pending' && !r.seen_at);
+}
+
+function renderNotice() {
+  const el = document.getElementById('notice');
+  const fresh = unseenDecisions();
+  if (!fresh.length) { el.className = 'notice hidden'; el.innerHTML = ''; return; }
+
+  const approved = fresh.filter(r => r.status === 'approved');
+  const declined = fresh.filter(r => r.status === 'declined');
+  const parts = [];
+  if (approved.length) parts.push(`<strong>Approved:</strong> ${approved.map(r => esc(r.item_name)).join(', ')}`);
+  if (declined.length) parts.push(`<strong>Declined:</strong> ${declined.map(r => esc(r.item_name)).join(', ')}`);
+
+  el.className = `notice ${approved.length ? 'good' : 'bad'}`;
+  el.innerHTML = `<div>${parts.join(' &nbsp;·&nbsp; ')}</div>
+    <button class="secondary" onclick="dismissNotice()">Got it</button>`;
+}
+
+async function dismissNotice() {
+  await fetch(`/api/requests/mine/${myCustomerId}/seen`, { method: 'POST' });
+  await loadMyRequests();
+}
+
+// While the page sits open, pick up a decision made on the other side without
+// the customer having to reload.
+function watchForDecisions() {
+  setInterval(async () => {
+    if (!myCustomerId || document.hidden) return;
+    const before = unseenDecisions().length;
+    await loadMyRequests();
+    if (unseenDecisions().length !== before) renderGrids();
+  }, 20000);
 }
 
 function renderMyRequests() {
@@ -363,6 +403,7 @@ function clearSearch() {
 
 loadSettings();
 loadMyRequests().then(loadItems);
+watchForDecisions();
 </script>
 </body>
 </html>

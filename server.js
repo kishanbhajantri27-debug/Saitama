@@ -174,11 +174,22 @@ app.post('/api/requests', (req, res) => {
 // that one customer's rows.
 app.get('/api/requests/mine/:customerId', (req, res) => {
   const rows = db.prepare(
-    `SELECT r.id, r.status, r.created_at, r.responded_at, i.name AS item_name, i.status AS item_status
+    `SELECT r.id, r.status, r.created_at, r.responded_at, r.seen_at,
+            i.name AS item_name, i.status AS item_status
      FROM requests r JOIN items i ON i.id = r.item_id
      WHERE r.customer_id = ? ORDER BY r.created_at DESC`
   ).all(req.params.customerId);
   res.json(rows);
+});
+
+// Called once the customer has been shown their decisions, so the same
+// approval is not announced on every visit.
+app.post('/api/requests/mine/:customerId/seen', (req, res) => {
+  const info = db.prepare(
+    `UPDATE requests SET seen_at = datetime('now')
+     WHERE customer_id = ? AND status != 'pending' AND seen_at IS NULL`
+  ).run(req.params.customerId);
+  res.json({ ok: true, marked: info.changes });
 });
 
 app.get('/api/requests', requireAdmin, (req, res) => {
@@ -201,8 +212,12 @@ app.put('/api/requests/:id', requireAdmin, (req, res) => {
   if (!['pending', 'approved', 'declined'].includes(status)) {
     return res.status(400).json({ error: 'status must be pending, approved or declined' });
   }
+  // seen_at resets so a changed decision is announced again rather than
+  // inheriting the acknowledgement of the previous one.
   const info = db.prepare(
-    `UPDATE requests SET status = ?, responded_at = CASE WHEN ? = 'pending' THEN NULL ELSE datetime('now') END
+    `UPDATE requests SET status = ?,
+       responded_at = CASE WHEN ? = 'pending' THEN NULL ELSE datetime('now') END,
+       seen_at = NULL
      WHERE id = ?`
   ).run(status, status, req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'request not found' });

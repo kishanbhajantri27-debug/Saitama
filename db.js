@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS shop_settings (
 
 db.prepare('INSERT OR IGNORE INTO shop_settings (id) VALUES (1)').run();
 
+// seen_at records that the customer has actually looked at a decision, so an
+// approval can be announced once and then stop nagging. Added after requests
+// shipped, hence the column check rather than a plain CREATE.
+const requestCols = db.prepare('PRAGMA table_info(requests)').all().map(c => c.name);
+if (!requestCols.includes('seen_at')) {
+  db.prepare('ALTER TABLE requests ADD COLUMN seen_at TEXT').run();
+}
+
 // The waitlist table predates approvals: every signup was implicitly pending.
 // Carry those rows into requests as pending, then retire the old table. Guarded
 // so it is a no-op on databases created after this change.
