@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shop Showcase</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img id="brandLogo" class="logo" style="display:none">
+    <div>
+      <h1 id="brandName">Shop Showcase</h1>
+      <p class="tagline" id="brandTagline" style="display:none"></p>
+    </div>
+  </div>
+  <a href="admin.html">Shop owner? Manage items &amp; customers →</a>
+</header>
+
+<main>
+  <div id="chips" class="chips"></div>
+
+  <section class="block">
+    <h2>Available Now</h2>
+    <div id="available" class="grid"></div>
+  </section>
+
+  <section class="block">
+    <h2>Coming Soon</h2>
+    <div id="upcoming" class="grid"></div>
+  </section>
+</main>
+
+<footer class="storefront" id="storefrontFooter"></footer>
+
+<div id="overlay" class="overlay hidden">
+  <div class="modal">
+    <h3>Notify me</h3>
+    <p class="empty" id="modalItemName"></p>
+    <label>Your name
+      <input id="notifyName" type="text" placeholder="Full name">
+    </label>
+    <label>Phone
+      <input id="notifyPhone" type="tel" placeholder="Phone number">
+    </label>
+    <label>Email
+      <input id="notifyEmail" type="email" placeholder="Email (optional if phone given)">
+    </label>
+    <p class="msg" id="notifyMsg"></p>
+    <div class="row">
+      <button class="secondary" id="notifyCancel">Cancel</button>
+      <button id="notifySubmit">Notify me</button>
+    </div>
+  </div>
+</div>
+
+<div id="detailOverlay" class="overlay hidden">
+  <div class="modal" style="width: 420px;">
+    <img id="detailImage" style="display:none; width:100%; height:200px; object-fit:cover; border-radius:8px;">
+    <span id="detailBadge"></span>
+    <h3 id="detailName"></h3>
+    <p class="category" id="detailCategory"></p>
+    <p id="detailDescription"></p>
+    <p class="price" id="detailPrice"></p>
+    <div id="detailNotify" style="display:none;">
+      <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
+      <label>Your name
+        <input id="detailNotifyName" type="text" placeholder="Full name">
+      </label>
+      <label>Phone
+        <input id="detailNotifyPhone" type="tel" placeholder="Phone number">
+      </label>
+      <label>Email
+        <input id="detailNotifyEmail" type="email" placeholder="Email (optional if phone given)">
+      </label>
+      <p class="msg" id="detailNotifyMsg"></p>
+      <button id="detailNotifySubmit">Notify me</button>
+    </div>
+    <div class="row">
+      <button class="secondary" id="detailClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let activeItemId = null;
+let allItems = [];
+let activeCategory = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function itemCard(item) {
+  const img = item.image_url
+    ? `<img src="${esc(item.image_url)}" alt="${esc(item.name)}">`
+    : `<img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E" alt="">`;
+  const priceStr = item.price ? `₹${Number(item.price).toFixed(2)}` : '';
+  const badge = item.status === 'upcoming'
+    ? '<span class="badge upcoming">Coming Soon</span>'
+    : '<span class="badge available">Available</span>';
+  const action = item.status === 'upcoming'
+    ? `<button onclick="event.stopPropagation(); openNotify(${item.id}, '${esc(item.name).replace(/'/g, "\\'")}')">Notify me</button>`
+    : '';
+  return `<div class="card" onclick="openDetail(${item.id})">
+    ${img}
+    <div class="body">
+      ${badge}
+      <div class="name">${esc(item.name)}</div>
+      ${item.category ? `<div class="category">${esc(item.category)}</div>` : ''}
+      <div class="desc">${esc(item.description)}</div>
+      ${priceStr ? `<div class="price">${priceStr}</div>` : ''}
+      ${action}
+    </div>
+  </div>`;
+}
+
+function renderChips() {
+  const categories = [...new Set(allItems.map(i => i.category).filter(Boolean))];
+  const chipsEl = document.getElementById('chips');
+  if (!categories.length) { chipsEl.innerHTML = ''; return; }
+  const all = `<button class="chip ${activeCategory === null ? 'active' : ''}" onclick="setCategory(null)">All</button>`;
+  const rest = categories.map(c =>
+    `<button class="chip ${activeCategory === c ? 'active' : ''}" onclick="setCategory('${esc(c).replace(/'/g, "\\'")}')">${esc(c)}</button>`
+  ).join('');
+  chipsEl.innerHTML = all + rest;
+}
+
+function setCategory(cat) {
+  activeCategory = cat;
+  renderChips();
+  renderGrids();
+}
+
+function renderGrids() {
+  const filtered = activeCategory ? allItems.filter(i => i.category === activeCategory) : allItems;
+  const available = filtered.filter(i => i.status === 'available');
+  const upcoming = filtered.filter(i => i.status === 'upcoming');
+
+  document.getElementById('available').innerHTML = available.length
+    ? available.map(itemCard).join('')
+    : '<p class="empty">No items available right now.</p>';
+
+  document.getElementById('upcoming').innerHTML = upcoming.length
+    ? upcoming.map(itemCard).join('')
+    : '<p class="empty">Nothing upcoming right now — check back soon.</p>';
+}
+
+async function loadItems() {
+  const [available, upcoming] = await Promise.all([
+    fetch('/api/items?status=available').then(r => r.json()),
+    fetch('/api/items?status=upcoming').then(r => r.json())
+  ]);
+  allItems = [...available, ...upcoming];
+  renderChips();
+  renderGrids();
+}
+
+async function loadSettings() {
+  const s = await fetch('/api/settings').then(r => r.json());
+  document.title = s.shop_name || 'Shop Showcase';
+  document.getElementById('brandName').textContent = s.shop_name || 'Shop Showcase';
+  if (s.tagline) {
+    const t = document.getElementById('brandTagline');
+    t.textContent = s.tagline;
+    t.style.display = '';
+  }
+  if (s.logo_url) {
+    const l = document.getElementById('brandLogo');
+    l.src = s.logo_url;
+    l.alt = s.shop_name || '';
+    l.style.display = '';
+  }
+  if (s.accent_color) {
+    document.documentElement.style.setProperty('--accent', s.accent_color);
+  }
+
+  const footerParts = [];
+  if (s.address) footerParts.push(`<span>${esc(s.address)}</span>`);
+  if (s.contact_phone) footerParts.push(`<span>${esc(s.contact_phone)}</span>`);
+  if (s.contact_email) footerParts.push(`<span>${esc(s.contact_email)}</span>`);
+  if (s.hours_text) footerParts.push(`<span>${esc(s.hours_text)}</span>`);
+  document.getElementById('storefrontFooter').innerHTML = footerParts.join('');
+}
+
+function openNotify(itemId, name) {
+  activeItemId = itemId;
+  document.getElementById('modalItemName').textContent = name;
+  document.getElementById('notifyName').value = '';
+  document.getElementById('notifyPhone').value = '';
+  document.getElementById('notifyEmail').value = '';
+  document.getElementById('notifyMsg').textContent = '';
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+function closeNotify() {
+  document.getElementById('overlay').classList.add('hidden');
+  activeItemId = null;
+}
+
+document.getElementById('notifyCancel').addEventListener('click', closeNotify);
+
+document.getElementById('notifySubmit').addEventListener('click', async () => {
+  const name = document.getElementById('notifyName').value.trim();
+  const phone = document.getElementById('notifyPhone').value.trim();
+  const email = document.getElementById('notifyEmail').value.trim();
+  const msgEl = document.getElementById('notifyMsg');
+
+  if (!name) { msgEl.textContent = 'Please enter your name.'; msgEl.className = 'msg err'; return; }
+  if (!phone && !email) { msgEl.textContent = 'Please enter a phone or email.'; msgEl.className = 'msg err'; return; }
+
+  const res = await fetch('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item_id: activeItemId, name, phone, email })
+  });
+
+  if (res.ok) {
+    msgEl.textContent = "You're on the list! We'll let you know.";
+    msgEl.className = 'msg ok';
+    setTimeout(closeNotify, 1200);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    msgEl.textContent = data.error || 'Something went wrong.';
+    msgEl.className = 'msg err';
+  }
+});
+
+// ---------- Item detail modal ----------
+
+function openDetail(itemId) {
+  const item = allItems.find(i => i.id === itemId);
+  if (!item) return;
+  activeItemId = item.id;
+
+  const imgEl = document.getElementById('detailImage');
+  if (item.image_url) { imgEl.src = item.image_url; imgEl.style.display = ''; }
+  else imgEl.style.display = 'none';
+
+  document.getElementById('detailBadge').innerHTML = item.status === 'upcoming'
+    ? '<span class="badge upcoming">Coming Soon</span>'
+    : '<span class="badge available">Available</span>';
+  document.getElementById('detailName').textContent = item.name;
+  document.getElementById('detailCategory').textContent = item.category || '';
+  document.getElementById('detailDescription').textContent = item.description || '';
+  document.getElementById('detailPrice').textContent = item.price ? `₹${Number(item.price).toFixed(2)}` : '';
+
+  const notifyBlock = document.getElementById('detailNotify');
+  if (item.status === 'upcoming') {
+    notifyBlock.style.display = '';
+    document.getElementById('detailNotifyName').value = '';
+    document.getElementById('detailNotifyPhone').value = '';
+    document.getElementById('detailNotifyEmail').value = '';
+    document.getElementById('detailNotifyMsg').textContent = '';
+  } else {
+    notifyBlock.style.display = 'none';
+  }
+
+  document.getElementById('detailOverlay').classList.remove('hidden');
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.add('hidden');
+  activeItemId = null;
+}
+
+document.getElementById('detailClose').addEventListener('click', closeDetail);
+
+document.getElementById('detailNotifySubmit').addEventListener('click', async () => {
+  const name = document.getElementById('detailNotifyName').value.trim();
+  const phone = document.getElementById('detailNotifyPhone').value.trim();
+  const email = document.getElementById('detailNotifyEmail').value.trim();
+  const msgEl = document.getElementById('detailNotifyMsg');
+
+  if (!name) { msgEl.textContent = 'Please enter your name.'; msgEl.className = 'msg err'; return; }
+  if (!phone && !email) { msgEl.textContent = 'Please enter a phone or email.'; msgEl.className = 'msg err'; return; }
+
+  const res = await fetch('/api/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item_id: activeItemId, name, phone, email })
+  });
+
+  if (res.ok) {
+    msgEl.textContent = "You're on the list! We'll let you know.";
+    msgEl.className = 'msg ok';
+    setTimeout(closeDetail, 1200);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    msgEl.textContent = data.error || 'Something went wrong.';
+    msgEl.className = 'msg err';
+  }
+});
+
+loadSettings();
+loadItems();
+</script>
+</body>
+</html>

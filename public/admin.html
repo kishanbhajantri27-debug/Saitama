@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shop Admin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>Shop Admin</h1>
+  <a href="index.html">← Back to showcase</a>
+</header>
+
+<main>
+  <section class="block">
+    <h2>Shop settings</h2>
+    <div class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Shop name</label>
+          <input id="s_name" type="text">
+        </div>
+        <div>
+          <label>Tagline</label>
+          <input id="s_tagline" type="text">
+        </div>
+        <div>
+          <label>Logo URL</label>
+          <input id="s_logo" type="text" placeholder="https://...">
+        </div>
+        <div>
+          <label>Accent color</label>
+          <input id="s_color" type="color">
+        </div>
+        <div>
+          <label>Contact phone</label>
+          <input id="s_phone" type="text">
+        </div>
+        <div>
+          <label>Contact email</label>
+          <input id="s_email" type="text">
+        </div>
+        <div>
+          <label>Address</label>
+          <input id="s_address" type="text">
+        </div>
+        <div>
+          <label>Hours</label>
+          <input id="s_hours" type="text" placeholder="Mon-Sat 10am-8pm">
+        </div>
+      </div>
+      <p class="msg" id="settingsMsg"></p>
+      <button id="settingsSave">Save settings</button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Add item</h2>
+    <div class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Name</label>
+          <input id="f_name" type="text">
+        </div>
+        <div>
+          <label>Category</label>
+          <input id="f_category" type="text">
+        </div>
+        <div>
+          <label>Price</label>
+          <input id="f_price" type="number" step="0.01" min="0">
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="f_status">
+            <option value="available">Available</option>
+            <option value="upcoming">Upcoming</option>
+          </select>
+        </div>
+        <div>
+          <label>Image URL</label>
+          <input id="f_image" type="text" placeholder="https://...">
+        </div>
+      </div>
+      <label>Description</label>
+      <textarea id="f_description" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;"></textarea>
+      <p class="msg" id="addMsg"></p>
+      <button id="addBtn">Add item</button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Items</h2>
+    <table id="itemsTable">
+      <thead>
+        <tr><th>Name</th><th>Category</th><th>Price</th><th>Status</th><th>Waitlist</th><th></th></tr>
+      </thead>
+      <tbody id="itemsBody"></tbody>
+    </table>
+  </section>
+
+  <section class="block">
+    <h2>Customers</h2>
+    <table id="customersTable">
+      <thead>
+        <tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th></tr>
+      </thead>
+      <tbody id="customersBody"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadItems() {
+  const items = await fetch('/api/items').then(r => r.json());
+  const body = document.getElementById('itemsBody');
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">No items yet.</td></tr>';
+    return;
+  }
+  const rows = await Promise.all(items.map(async item => {
+    const waitlistCount = item.status === 'upcoming'
+      ? (await fetch(`/api/items/${item.id}/waitlist`).then(r => r.json())).length
+      : null;
+    return `<tr>
+      <td>${esc(item.name)}</td>
+      <td>${esc(item.category)}</td>
+      <td>${item.price ? '₹' + Number(item.price).toFixed(2) : ''}</td>
+      <td>
+        <select onchange="updateStatus(${item.id}, this.value)">
+          <option value="available" ${item.status === 'available' ? 'selected' : ''}>Available</option>
+          <option value="upcoming" ${item.status === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+        </select>
+      </td>
+      <td>${waitlistCount === null ? '—' : waitlistCount}</td>
+      <td class="inline-actions">
+        <button class="danger" onclick="deleteItem(${item.id})">Delete</button>
+      </td>
+    </tr>`;
+  }));
+  body.innerHTML = rows.join('');
+}
+
+async function loadCustomers() {
+  const customers = await fetch('/api/customers').then(r => r.json());
+  const body = document.getElementById('customersBody');
+  body.innerHTML = customers.length
+    ? customers.map(c => `<tr>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.phone)}</td>
+        <td>${esc(c.email)}</td>
+        <td>${esc(c.notes)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" class="empty">No customers yet.</td></tr>';
+}
+
+async function updateStatus(id, status) {
+  await fetch(`/api/items/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+  loadItems();
+}
+
+async function deleteItem(id) {
+  if (!confirm('Delete this item?')) return;
+  await fetch(`/api/items/${id}`, { method: 'DELETE' });
+  loadItems();
+}
+
+document.getElementById('addBtn').addEventListener('click', async () => {
+  const msgEl = document.getElementById('addMsg');
+  const name = document.getElementById('f_name').value.trim();
+  if (!name) { msgEl.textContent = 'Name is required.'; msgEl.className = 'msg err'; return; }
+
+  const res = await fetch('/api/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      category: document.getElementById('f_category').value.trim(),
+      price: document.getElementById('f_price').value || 0,
+      status: document.getElementById('f_status').value,
+      image_url: document.getElementById('f_image').value.trim(),
+      description: document.getElementById('f_description').value.trim()
+    })
+  });
+
+  if (res.ok) {
+    msgEl.textContent = 'Item added.';
+    msgEl.className = 'msg ok';
+    ['f_name','f_category','f_price','f_image','f_description'].forEach(id => document.getElementById(id).value = '');
+    loadItems();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    msgEl.textContent = data.error || 'Failed to add item.';
+    msgEl.className = 'msg err';
+  }
+});
+
+async function loadSettings() {
+  const s = await fetch('/api/settings').then(r => r.json());
+  document.getElementById('s_name').value = s.shop_name || '';
+  document.getElementById('s_tagline').value = s.tagline || '';
+  document.getElementById('s_logo').value = s.logo_url || '';
+  document.getElementById('s_color').value = s.accent_color || '#2f6f4f';
+  document.getElementById('s_phone').value = s.contact_phone || '';
+  document.getElementById('s_email').value = s.contact_email || '';
+  document.getElementById('s_address').value = s.address || '';
+  document.getElementById('s_hours').value = s.hours_text || '';
+}
+
+document.getElementById('settingsSave').addEventListener('click', async () => {
+  const msgEl = document.getElementById('settingsMsg');
+  const res = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      shop_name: document.getElementById('s_name').value.trim(),
+      tagline: document.getElementById('s_tagline').value.trim(),
+      logo_url: document.getElementById('s_logo').value.trim(),
+      accent_color: document.getElementById('s_color').value,
+      contact_phone: document.getElementById('s_phone').value.trim(),
+      contact_email: document.getElementById('s_email').value.trim(),
+      address: document.getElementById('s_address').value.trim(),
+      hours_text: document.getElementById('s_hours').value.trim()
+    })
+  });
+  if (res.ok) {
+    msgEl.textContent = 'Settings saved.';
+    msgEl.className = 'msg ok';
+    loadSettings();
+  } else {
+    msgEl.textContent = 'Failed to save settings.';
+    msgEl.className = 'msg err';
+  }
+});
+
+loadSettings();
+loadItems();
+loadCustomers();
+</script>
+</body>
+</html>
