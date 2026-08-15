@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const express = require('express');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const db = require('./db');
+const { sendDecision } = require('./mailer');
 
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'changeme123';
@@ -221,7 +222,28 @@ app.put('/api/requests/:id', requireAdmin, (req, res) => {
      WHERE id = ?`
   ).run(status, status, req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'request not found' });
-  res.json(db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.id));
+
+  const updated = db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.id);
+
+  // Email the decision if we have an address. Deliberately not awaited: the
+  // owner's approval should land immediately whether or not mail is working.
+  if (status !== 'pending') {
+    const detail = db.prepare(
+      `SELECT c.name AS customer_name, c.email, i.name AS item_name
+       FROM requests r JOIN customers c ON c.id = r.customer_id JOIN items i ON i.id = r.item_id
+       WHERE r.id = ?`
+    ).get(req.params.id);
+    const shopName = db.prepare('SELECT shop_name FROM shop_settings WHERE id = 1').get().shop_name;
+    sendDecision({
+      to: detail.email,
+      shopName,
+      customerName: detail.customer_name,
+      itemName: detail.item_name,
+      status
+    });
+  }
+
+  res.json(updated);
 });
 
 // ---------- Shop settings ----------
