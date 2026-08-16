@@ -2,77 +2,195 @@ import os
 import sqlite3
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-DB_PATH = os.path.join(DATA_DIR, "shop.db")
+DB_PATH = os.path.join(DATA_DIR, "store.db")
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS stores (
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  description TEXT DEFAULT '',
-  price REAL DEFAULT 0,
+  tagline TEXT DEFAULT '',
+  rating REAL DEFAULT 0,
+  city TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  opens_at TEXT DEFAULT '09:30',
+  closes_at TEXT DEFAULT '21:30',
+  lat REAL, lng REAL,
+  accent_color TEXT DEFAULT '#3d5afe'
+);
+
+CREATE TABLE IF NOT EXISTS branches (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  brand TEXT DEFAULT '',
   category TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  -- Words a shopper might use that appear nowhere else on the record:
+  -- "shoes" for a trainer, "charger" for an adapter. Without these, a search
+  -- for "Nike shoes" finds nothing, because no field contains "shoes".
+  tags TEXT DEFAULT '',
   image_url TEXT DEFAULT '',
-  status TEXT NOT NULL CHECK(status IN ('available','upcoming')) DEFAULT 'available',
+  rating REAL DEFAULT 0,
+  rating_count INTEGER DEFAULT 0,
+  popularity INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS product_variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  store_id TEXT NOT NULL,
+  sku TEXT NOT NULL UNIQUE,
+  barcode TEXT UNIQUE,
+  label TEXT DEFAULT '',            -- "Black - Size 9"
+  price REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Stock lives per variant per branch. Availability is on_hand - reserved, and
+-- freshness comes from updated_at, which is what drives the status colours.
+CREATE TABLE IF NOT EXISTS inventory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  variant_id INTEGER NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  on_hand INTEGER NOT NULL DEFAULT 0 CHECK(on_hand >= 0),
+  reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(branch_id, variant_id)
+);
+
+-- Append-only. Analytics and the dashboard read from here rather than from
+-- mutated totals, so every number can be traced to the event that caused it.
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  variant_id INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN
+    ('add','remove','adjust','reserve','release','pickup')),
+  quantity INTEGER NOT NULL,
+  note TEXT DEFAULT '',
+  actor TEXT DEFAULT 'system',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
   name TEXT NOT NULL,
   phone TEXT DEFAULT '',
   email TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
+  is_demo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS requests (
+CREATE TABLE IF NOT EXISTS employees (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  status TEXT NOT NULL CHECK(status IN ('pending','approved','declined')) DEFAULT 'pending',
-  note TEXT DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  responded_at TEXT,
-  seen_at TEXT,
-  UNIQUE(item_id, customer_id)
+  store_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'staff',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- A sale is a record, not a state, so it lives apart from requests: a customer
--- can buy the same item twice, which the UNIQUE on requests forbids.
--- item_name and price are snapshots rather than lookups. Deleting an item must
--- not rewrite what someone paid last month, so the item link goes to NULL and
--- the history still reads correctly.
-CREATE TABLE IF NOT EXISTS purchases (
+CREATE TABLE IF NOT EXISTS reservations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,        -- RSV-48291
+  store_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  variant_id INTEGER NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
-  item_name TEXT NOT NULL,
-  price REAL NOT NULL DEFAULT 0,
   quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN
+    ('pending','accepted','ready','completed','rejected','expired','cancelled')),
   note TEXT DEFAULT '',
-  bought_at TEXT NOT NULL DEFAULT (datetime('now'))
+  expires_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS shop_settings (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  shop_name TEXT NOT NULL DEFAULT 'My Shop',
-  tagline TEXT DEFAULT '',
-  logo_url TEXT DEFAULT '',
-  accent_color TEXT DEFAULT '#2f6f4f',
-  contact_phone TEXT DEFAULT '',
-  contact_email TEXT DEFAULT '',
-  address TEXT DEFAULT '',
-  hours_text TEXT DEFAULT ''
+-- Historical rows snapshot name and price: deleting a product must never
+-- rewrite what somebody paid for it.
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+  reservation_id INTEGER REFERENCES reservations(id) ON DELETE SET NULL,
+  product_name TEXT NOT NULL,
+  sku TEXT DEFAULT '',
+  unit_price REAL NOT NULL DEFAULT 0,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  total REAL NOT NULL DEFAULT 0,
+  channel TEXT NOT NULL DEFAULT 'in-store',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Mock only: no real processing happens (spec section 22).
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+  method TEXT NOT NULL DEFAULT 'cash',
+  amount REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'captured',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+  number TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wishlists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(customer_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'back_in_stock',
+  title TEXT DEFAULT '',
+  body TEXT DEFAULT '',
+  fired_at TEXT,
+  seen_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
+CREATE INDEX IF NOT EXISTS idx_movements_variant ON inventory_movements(variant_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 """
 
 
 def connect():
     """A connection for the current caller.
 
-    check_same_thread is off because Flask serves requests on several threads;
-    each call opens its own connection rather than sharing one, so that is safe.
-    WAL lets a reader work while a writer holds the file.
+    check_same_thread is off because Flask serves on several threads; each call
+    opens its own connection rather than sharing one, so that is safe.
     """
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -86,26 +204,6 @@ def init():
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
-        conn.execute("INSERT OR IGNORE INTO shop_settings (id) VALUES (1)")
-
-        # seen_at arrived after requests shipped, so older databases lack it.
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(requests)")]
-        if "seen_at" not in cols:
-            conn.execute("ALTER TABLE requests ADD COLUMN seen_at TEXT")
-
-        # The waitlist table predates approvals: every signup was implicitly
-        # pending. Carry those rows over, then retire the old table. A no-op on
-        # databases created after that change.
-        has_waitlist = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'waitlist'"
-        ).fetchone()
-        if has_waitlist:
-            conn.execute(
-                """INSERT OR IGNORE INTO requests (item_id, customer_id, status, created_at)
-                   SELECT item_id, customer_id, 'pending', created_at FROM waitlist"""
-            )
-            conn.execute("DROP TABLE waitlist")
-
         conn.commit()
     finally:
         conn.close()
@@ -125,7 +223,7 @@ def query_one(sql, params=()):
 
 
 def execute(sql, params=()):
-    """Run a write. Returns (rows_affected, last_insert_id)."""
+    """Run a single write. Returns (rows_affected, last_insert_id)."""
     conn = connect()
     try:
         cur = conn.execute(sql, params)
@@ -133,3 +231,33 @@ def execute(sql, params=()):
         return cur.rowcount, cur.lastrowid
     finally:
         conn.close()
+
+
+def transaction():
+    """Connection for multi-statement writes that must land together.
+
+    Stock moves and reservation state changes have to be atomic -- a hold that
+    is recorded without the matching reserved count is a real inventory bug.
+
+    Usage:
+        with db.transaction() as conn:
+            conn.execute(...)
+    """
+    return _Transaction()
+
+
+class _Transaction:
+    def __enter__(self):
+        self.conn = connect()
+        self.conn.execute("BEGIN IMMEDIATE")
+        return self.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        finally:
+            self.conn.close()
+        return False
