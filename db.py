@@ -37,6 +37,22 @@ CREATE TABLE IF NOT EXISTS requests (
   UNIQUE(item_id, customer_id)
 );
 
+-- A sale is a record, not a state, so it lives apart from requests: a customer
+-- can buy the same item twice, which the UNIQUE on requests forbids.
+-- item_name and price are snapshots rather than lookups. Deleting an item must
+-- not rewrite what someone paid last month, so the item link goes to NULL and
+-- the history still reads correctly.
+CREATE TABLE IF NOT EXISTS purchases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
+  item_name TEXT NOT NULL,
+  price REAL NOT NULL DEFAULT 0,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+  note TEXT DEFAULT '',
+  bought_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS shop_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   shop_name TEXT NOT NULL DEFAULT 'My Shop',

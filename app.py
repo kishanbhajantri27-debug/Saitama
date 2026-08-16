@@ -256,6 +256,7 @@ def mark_seen(customer_id):
 @require_admin
 def list_requests():
     base = """SELECT r.id, r.status, r.note, r.created_at, r.responded_at,
+                     r.item_id, r.customer_id,
                      i.name AS item_name, i.status AS item_status,
                      c.name AS customer_name, c.phone, c.email
               FROM requests r
@@ -299,6 +300,80 @@ def decide_request(request_id):
                       detail["item_name"], status)
 
     return jsonify(db.query_one("SELECT * FROM requests WHERE id = ?", (request_id,)))
+
+
+# ---------- Purchases ----------
+
+@app.post("/api/purchases")
+@require_admin
+def record_purchase():
+    body = request.get_json(silent=True) or {}
+    customer_id = body.get("customer_id")
+    item_id = body.get("item_id")
+
+    customer = db.query_one("SELECT * FROM customers WHERE id = ?", (customer_id,))
+    if not customer:
+        return jsonify(error="customer not found"), 404
+    item = db.query_one("SELECT * FROM items WHERE id = ?", (item_id,))
+    if not item:
+        return jsonify(error="item not found"), 404
+
+    # Checked against None rather than falsiness: `or 1` would quietly turn a
+    # quantity of 0 into 1 instead of rejecting it.
+    raw_quantity = body.get("quantity")
+    try:
+        quantity = 1 if raw_quantity is None else int(raw_quantity)
+    except (TypeError, ValueError):
+        return jsonify(error="quantity must be a whole number"), 400
+    if quantity < 1:
+        return jsonify(error="quantity must be at least 1"), 400
+
+    # Price defaults to what the item costs today, but stays overridable for a
+    # discount. Either way it is frozen here rather than read back later.
+    price = item["price"]
+    if body.get("price") is not None:
+        try:
+            price = float(body["price"])
+        except (TypeError, ValueError):
+            return jsonify(error="price must be a number"), 400
+
+    _, new_id = db.execute(
+        """INSERT INTO purchases (customer_id, item_id, item_name, price, quantity, note)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (customer["id"], item["id"], item["name"], price, quantity,
+         (body.get("note") or "").strip()),
+    )
+    return jsonify(db.query_one("SELECT * FROM purchases WHERE id = ?", (new_id,))), 201
+
+
+@app.get("/api/purchases")
+@require_admin
+def list_purchases():
+    base = """SELECT p.*, c.name AS customer_name, c.email, c.phone
+              FROM purchases p JOIN customers c ON c.id = p.customer_id"""
+    customer_id = request.args.get("customer_id")
+    if customer_id:
+        return jsonify(db.query(
+            f"{base} WHERE p.customer_id = ? ORDER BY p.bought_at DESC", (customer_id,)))
+    return jsonify(db.query(f"{base} ORDER BY p.bought_at DESC"))
+
+
+@app.get("/api/purchases/mine/<int:customer_id>")
+def my_purchases(customer_id):
+    return jsonify(db.query(
+        """SELECT id, item_name, price, quantity, bought_at
+           FROM purchases WHERE customer_id = ? ORDER BY bought_at DESC""",
+        (customer_id,),
+    ))
+
+
+@app.delete("/api/purchases/<int:purchase_id>")
+@require_admin
+def delete_purchase(purchase_id):
+    changes, _ = db.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+    if changes == 0:
+        return jsonify(error="purchase not found"), 404
+    return "", 204
 
 
 # ---------- Customers ----------

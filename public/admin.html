@@ -112,6 +112,17 @@
   </section>
 
   <section class="block">
+    <h2>Purchase history</h2>
+    <table id="purchasesTable">
+      <thead>
+        <tr><th>When</th><th>Customer</th><th>Item</th><th>Qty</th><th>Paid</th><th></th></tr>
+      </thead>
+      <tbody id="purchasesBody"></tbody>
+      <tfoot id="purchasesFoot"></tfoot>
+    </table>
+  </section>
+
+  <section class="block">
     <h2>Customers</h2>
     <table id="customersTable">
       <thead>
@@ -199,12 +210,70 @@ async function loadRequests() {
     <td><span class="reqstate ${r.status}">${esc(r.status)}</span></td>
     <td class="inline-actions">
       ${r.status !== 'approved' ? `<button onclick="decide(${r.id}, 'approved')">Approve</button>` : ''}
+      ${r.status === 'approved' ? `<button class="secondary" onclick="markBought(${r.customer_id}, ${r.item_id}, this)">Mark bought</button>` : ''}
       ${r.status !== 'declined' ? `<button class="danger" onclick="decide(${r.id}, 'declined')">Decline</button>` : ''}
     </td>
   </tr>`).join('');
 }
 
 function setReqFilter(f) { reqFilter = f; loadRequests(); }
+
+function money(n) { return '₹' + Number(n || 0).toFixed(2); }
+
+async function loadPurchases() {
+  const rows = await fetch('/api/purchases').then(r => r.json());
+  const body = document.getElementById('purchasesBody');
+  const foot = document.getElementById('purchasesFoot');
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Nothing sold yet.</td></tr>';
+    foot.innerHTML = '';
+    return;
+  }
+
+  body.innerHTML = rows.map(p => `<tr>
+    <td>${esc((p.bought_at || '').slice(0, 16))}</td>
+    <td>${esc(p.customer_name)}</td>
+    <td>${esc(p.item_name)}</td>
+    <td>${p.quantity}</td>
+    <td>${money(p.price * p.quantity)}</td>
+    <td class="inline-actions">
+      <button class="danger" onclick="removePurchase(${p.id})">Remove</button>
+    </td>
+  </tr>`).join('');
+
+  const total = rows.reduce((sum, p) => sum + p.price * p.quantity, 0);
+  foot.innerHTML = `<tr>
+    <td colspan="4"><strong>${rows.length} sale${rows.length === 1 ? '' : 's'}</strong></td>
+    <td colspan="2"><strong>${money(total)}</strong></td>
+  </tr>`;
+}
+
+// Recording the sale does not close the request -- approved means "yes you can
+// have it", bought means "it changed hands", and the owner may want the
+// approval to stay visible until collection.
+async function markBought(customerId, itemId, btn) {
+  btn.disabled = true;
+  const res = await fetch('/api/purchases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customer_id: customerId, item_id: itemId })
+  });
+  if (res.ok) {
+    btn.textContent = 'Recorded';
+    loadPurchases();
+    loadCustomers();
+  } else {
+    btn.textContent = 'Failed';
+    btn.disabled = false;
+  }
+}
+
+async function removePurchase(id) {
+  if (!confirm('Remove this sale from the history?')) return;
+  await fetch(`/api/purchases/${id}`, { method: 'DELETE' });
+  loadPurchases();
+}
 
 async function decide(id, status) {
   await fetch(`/api/requests/${id}`, {
@@ -317,6 +386,7 @@ document.getElementById('settingsSave').addEventListener('click', async () => {
 
 loadSettings();
 loadRequests();
+loadPurchases();
 loadItems();
 loadCustomers();
 </script>

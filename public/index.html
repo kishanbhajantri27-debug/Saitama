@@ -30,6 +30,8 @@
 
   <section class="block" id="myRequests"></section>
 
+  <section class="block" id="myPurchases"></section>
+
   <section class="block">
     <h2>Available Now</h2>
     <div id="available" class="grid"></div>
@@ -113,6 +115,24 @@ async function loadMyRequests() {
   myRequests = await fetch(`/api/requests/mine/${myCustomerId}`).then(r => r.json()).catch(() => []);
   renderMyRequests();
   renderNotice();
+}
+
+async function loadMyPurchases() {
+  const panel = document.getElementById('myPurchases');
+  if (!myCustomerId) { panel.innerHTML = ''; return; }
+  const rows = await fetch(`/api/purchases/mine/${myCustomerId}`).then(r => r.json()).catch(() => []);
+  if (!rows.length) { panel.innerHTML = ''; return; }
+
+  const total = rows.reduce((sum, p) => sum + p.price * p.quantity, 0);
+  panel.innerHTML = `<h2>What you have bought</h2><ul class="reqlist">${
+    rows.map(p => `<li>
+      <span class="reqname">${esc(p.item_name)}${p.quantity > 1 ? ` &times;${p.quantity}` : ''}</span>
+      <span class="bought">
+        <span class="boughtdate">${esc((p.bought_at || '').slice(0, 10))}</span>
+        <strong>₹${(p.price * p.quantity).toFixed(2)}</strong>
+      </span>
+    </li>`).join('')
+  }</ul><p class="totalline">Total spent: <strong>₹${total.toFixed(2)}</strong></p>`;
 }
 
 // A decision the customer has not acknowledged yet.
@@ -407,6 +427,7 @@ function clearSearch() {
 
 loadSettings();
 loadMyRequests().then(loadItems);
+loadMyPurchases();
 watchForDecisions();
 </script>
 </body>
