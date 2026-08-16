@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 
 import config
 import db
+from services import audit
+from services.security import require
 
 MOVEMENT_KINDS = (
     "STOCK_RECEIVED", "STOCK_ADJUSTMENT", "SALE", "RETURN",
@@ -140,15 +142,22 @@ def record_movement(conn, variant_id, kind, quantity=0, note="", actor="system",
     )
 
 
-def change_stock(variant_id, kind, quantity, note="", actor="staff", branch_id=None):
+def change_stock(variant_id, kind, quantity, note="", actor=None, branch_id=None):
     """Add, remove or adjust on-hand stock.
 
     add/remove move by a delta; adjust sets an absolute count, which is what a
     stock-take produces. Every path writes a movement row.
+
+    Permission is checked here rather than only at the route, so the rule holds
+    for any caller. Setting an absolute count needs a higher permission than
+    moving one, because overwriting a number can hide a discrepancy that a
+    delta would have exposed.
     """
     branch_id = branch_id or config.BRANCH_ID
     if kind not in ("add", "remove", "adjust"):
         raise ValueError("kind must be add, remove or adjust")
+
+    require(actor, "inventory.stocktake" if kind == "adjust" else "inventory.adjust")
     quantity = int(quantity)
     if kind in ("add", "remove") and quantity < 1:
         raise ValueError("quantity must be at least 1")
@@ -161,6 +170,7 @@ def change_stock(variant_id, kind, quantity, note="", actor="staff", branch_id=N
             "SELECT * FROM inventory WHERE variant_id = ? AND branch_id = ?",
             (variant_id, branch_id),
         ).fetchone()
+        before_on_hand = row["on_hand"]
 
         if kind == "add":
             new_on_hand = row["on_hand"] + quantity
@@ -184,20 +194,28 @@ def change_stock(variant_id, kind, quantity, note="", actor="staff", branch_id=N
             (new_on_hand, row["id"]),
         )
         record_movement(
-            conn, variant_id, movement, abs(new_on_hand - row["on_hand"]), note, actor,
-            branch_id, on_hand_delta=new_on_hand - row["on_hand"],
+            conn, variant_id, movement, abs(new_on_hand - row["on_hand"]), note,
+            _actor_name(actor), branch_id, on_hand_delta=new_on_hand - row["on_hand"],
         )
 
+    audit.record(actor, f"inventory.{kind}", "variant", variant_id,
+                 {"from": before_on_hand, "to": new_on_hand, "note": note})
     return get(variant_id, branch_id)
 
 
-def touch(variant_id, branch_id=None):
+def _actor_name(actor):
+    return (actor or {}).get("name") or "system"
+
+
+def touch(variant_id, branch_id=None, actor=None):
     """Mark a count as re-verified without changing it."""
+    require(actor, "inventory.adjust")
     branch_id = branch_id or config.BRANCH_ID
     db.execute(
         "UPDATE inventory SET updated_at = datetime('now') WHERE variant_id = ? AND branch_id = ?",
         (variant_id, branch_id),
     )
+    audit.record(actor, "inventory.recount", "variant", variant_id)
     return get(variant_id, branch_id)
 
 

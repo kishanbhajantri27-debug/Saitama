@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import db
-from services import inventory
+from services import audit, inventory
+from services.security import SYSTEM, require
 
 OPEN_STATES = ("pending", "accepted", "ready_for_pickup")
 
@@ -30,6 +31,10 @@ def _code():
 def _expiry(minutes=None):
     minutes = minutes or config.RESERVATION_MINUTES
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _name(actor):
+    return (actor or {}).get("name") or "system"
 
 
 def _hydrate(row):
@@ -165,7 +170,7 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
             )
             inventory.record_movement(
                 conn, row["variant_id"], "RESERVATION_RELEASE", row["quantity"],
-                f"{new_status} {row['code']}", actor, row["branch_id"],
+                f"{new_status} {row['code']}", _name(actor), row["branch_id"],
                 reserved_delta=-row["quantity"], reservation_id=reservation_id)
 
         if consume_stock and stock:
@@ -178,7 +183,7 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
             )
             inventory.record_movement(
                 conn, row["variant_id"], "PICKUP", row["quantity"],
-                f"picked up {row['code']}", actor, row["branch_id"],
+                f"picked up {row['code']}", _name(actor), row["branch_id"],
                 on_hand_delta=-row["quantity"], reserved_delta=-row["quantity"],
                 reservation_id=reservation_id)
             _write_sale(conn, row)
@@ -189,7 +194,7 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
         if new_status in lifecycle:
             inventory.record_movement(
                 conn, row["variant_id"], lifecycle[new_status], row["quantity"],
-                f"{row['code']}", actor, row["branch_id"], reservation_id=reservation_id)
+                f"{row['code']}", _name(actor), row["branch_id"], reservation_id=reservation_id)
 
         conn.execute(
             "UPDATE reservations SET status = ?, updated_at = datetime('now') WHERE id = ?",
@@ -242,30 +247,54 @@ def _require(reservation_id, allowed):
     return row
 
 
-def accept(reservation_id, actor="staff"):
+def accept(reservation_id, actor=None):
+    require(actor, "reservation.accept")
     _require(reservation_id, ("pending",))
-    return _set_status(reservation_id, "accepted", actor=actor)
+    result = _set_status(reservation_id, "accepted", actor=actor)
+    audit.record(actor, "reservation.accept", "reservation", reservation_id,
+                 {"code": result["code"]})
+    return result
 
 
-def mark_ready(reservation_id, actor="staff"):
+def mark_ready(reservation_id, actor=None):
+    require(actor, "reservation.ready")
     _require(reservation_id, ("pending", "accepted"))
-    return _set_status(reservation_id, "ready_for_pickup", actor=actor)
+    result = _set_status(reservation_id, "ready_for_pickup", actor=actor)
+    audit.record(actor, "reservation.ready", "reservation", reservation_id,
+                 {"code": result["code"]})
+    return result
 
 
-def reject(reservation_id, actor="staff"):
+def reject(reservation_id, actor=None):
+    require(actor, "reservation.reject")
     _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
-    return _set_status(reservation_id, "rejected", release_stock=True, actor=actor)
+    result = _set_status(reservation_id, "rejected", release_stock=True, actor=actor)
+    audit.record(actor, "reservation.reject", "reservation", reservation_id,
+                 {"code": result["code"], "quantity": result["quantity"]})
+    return result
 
 
-def cancel(reservation_id, actor="customer"):
+def cancel(reservation_id, actor=None):
+    """Cancelled by the customer who owns it -- not a staff permission.
+
+    Guarded at the route by ownership rather than by role, since the person
+    entitled to cancel a hold is the one who placed it.
+    """
     _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
-    return _set_status(reservation_id, "cancelled", release_stock=True, actor=actor)
+    result = _set_status(reservation_id, "cancelled", release_stock=True, actor=actor)
+    audit.record(actor, "reservation.cancel", "reservation", reservation_id,
+                 {"code": result["code"]})
+    return result
 
 
-def complete(reservation_id, actor="staff"):
+def complete(reservation_id, actor=None):
     """Hand the goods over: stock leaves the building and a sale is recorded."""
+    require(actor, "reservation.complete")
     _require(reservation_id, ("accepted", "ready_for_pickup"))
-    return _set_status(reservation_id, "completed", consume_stock=True, actor=actor)
+    result = _set_status(reservation_id, "completed", consume_stock=True, actor=actor)
+    audit.record(actor, "reservation.complete", "reservation", reservation_id,
+                 {"code": result["code"], "quantity": result["quantity"]})
+    return result
 
 
 def expire_due():
@@ -282,7 +311,7 @@ def expire_due():
     )
     for row in due:
         try:
-            _set_status(row["id"], "expired", release_stock=True, actor="system")
+            _set_status(row["id"], "expired", release_stock=True, actor=SYSTEM)
         except ReservationError:
             pass
     return len(due)

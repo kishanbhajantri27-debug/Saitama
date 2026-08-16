@@ -16,7 +16,31 @@ export const state = {
   wishlistIds: new Set(),
   unseenNotifications: 0,
   pendingReservations: 0,
+  // Who is signed in to store mode, and what the server will let them do.
+  // Used only to lay out the UI -- every one of these is enforced again
+  // server-side, so a tampered set buys nothing.
+  user: null,
+  permissions: new Set(),
 };
+
+export function may(permission) {
+  return state.permissions.has(permission);
+}
+
+/** Restore the signed-in identity after a page reload. */
+export async function restoreSession() {
+  if (!auth.isStaff) return;
+  try {
+    const me = await api.sessionMe();
+    state.user = me.user;
+    state.permissions = new Set(me.permissions);
+  } catch {
+    // Token no longer valid -- disabled, deleted, or the server restarted.
+    auth.token = '';
+    state.user = null;
+    state.permissions = new Set();
+  }
+}
 
 export function setMode(mode) {
   state.mode = mode;
@@ -27,6 +51,8 @@ export function setMode(mode) {
 export function exitMode() {
   setMode(null);
   auth.token = '';
+  state.user = null;
+  state.permissions = new Set();
   location.hash = '#/';
 }
 

@@ -22,8 +22,6 @@ LOW_STOCK_AT = 3
 
 CURRENCY = "₹"
 
-# Store mode is gated by a shared passcode. It is shown on the sign-in screen
-# on purpose: this is a showcase, and real per-employee accounts are the parent
-# platform's job. Set STAFF_PASSCODE in .env to change it, and clear this hint
-# if the demo is ever put anywhere public.
-DEMO_PASSCODE_HINT = os.environ.get("STAFF_PASSCODE", "2468")
+# Store mode now uses per-employee accounts with roles, seeded by seed.py.
+# The shared passcode that used to gate it is gone: it could not identify who
+# did something, which made an audit trail impossible.

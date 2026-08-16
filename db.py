@@ -2,7 +2,9 @@ import os
 import sqlite3
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-DB_PATH = os.path.join(DATA_DIR, "store.db")
+# Overridable so tests run against a throwaway file instead of the demo
+# database. Read at import time; tests set it before importing.
+DB_PATH = os.environ.get("STORE_DB_PATH") or os.path.join(DATA_DIR, "store.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -105,13 +107,43 @@ CREATE TABLE IF NOT EXISTS customers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Staff accounts. password_hash holds a salted scrypt digest and is never
+-- selected into anything that leaves the process; there is no column for a
+-- plaintext password because there is nowhere one could safely live.
 CREATE TABLE IF NOT EXISTS employees (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id TEXT NOT NULL,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'staff',
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('owner','manager','staff')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
+  last_login_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  disabled_at TEXT
+);
+
+-- Who did what, when, to which record. Append-only: rows are never updated or
+-- deleted, because an audit trail that can be edited is not one.
+--
+-- actor_id is kept alongside a copied actor_name so the trail still reads
+-- correctly after an account is removed, and it deliberately has no foreign
+-- key -- deleting staff must not cascade away the record of their actions.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  actor_id INTEGER,
+  actor_name TEXT NOT NULL DEFAULT 'system',
+  actor_role TEXT NOT NULL DEFAULT 'system',
+  action TEXT NOT NULL,
+  entity_type TEXT DEFAULT '',
+  entity_id TEXT DEFAULT '',
+  detail TEXT DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT 'ok' CHECK(outcome IN ('ok','denied')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id);
 
 CREATE TABLE IF NOT EXISTS reservations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,12 +244,12 @@ def connect():
 # Bumped whenever the schema changes shape. Everything in this database is
 # regenerated demo data, so a mismatch is resolved by rebuilding rather than by
 # writing a migration for data nobody needs to keep.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 TABLES = [
     "notifications", "wishlists", "invoices", "payments", "orders",
     "reservations", "inventory_movements", "inventory", "product_variants",
-    "products", "employees", "customers", "branches", "stores",
+    "products", "employees", "customers", "branches", "stores", "audit_log",
 ]
 
 
@@ -244,7 +276,12 @@ def _drop_all(conn):
     conn.execute("PRAGMA foreign_keys = OFF")
     for table in TABLES:
         conn.execute(f"DROP TABLE IF EXISTS {table}")
-    conn.execute("DELETE FROM sqlite_sequence")
+    # sqlite_sequence only exists once an AUTOINCREMENT table has been created,
+    # so on a database that has never been populated it is legitimately absent.
+    has_sequence = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").fetchone()
+    if has_sequence:
+        conn.execute("DELETE FROM sqlite_sequence")
     conn.execute("PRAGMA foreign_keys = ON")
 
 

@@ -91,8 +91,15 @@ export const api = {
   cancelReservation: (id) => call(`/reservations/${id}/cancel`, { method: 'POST' }),
   reservationAction: (id, action) => call(`/reservations/${id}/${action}`, { method: 'POST', staff: true }),
 
-  staffLogin: (passcode) => call('/session/staff', { method: 'POST', body: { passcode } }),
+  staffLogin: (username, password) =>
+    call('/session/staff', { method: 'POST', body: { username, password } }),
   staffLogout: () => call('/session/staff/logout', { method: 'POST', staff: true }),
+  sessionMe: () => call('/session/me', { staff: true }),
+  staffList: () => call('/staff', { staff: true }),
+  auditLog: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return call(`/audit${q ? '?' + q : ''}`, { staff: true });
+  },
 
   inventory: (params = {}) => {
     const q = new URLSearchParams(
@@ -110,6 +117,7 @@ export const api = {
   productHistory: (productId) => call(`/products/${productId}/history`),
   resetDemo: () => call('/demo/reset', { method: 'POST' }),
 
+  inventorySummary: () => call('/inventory/summary', { staff: true }),
   today: () => call('/analytics/today', { staff: true }),
   overview: () => call('/analytics/overview', { staff: true }),
 };

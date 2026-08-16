@@ -6,6 +6,7 @@ a going concern rather than an empty shell.
 """
 import config
 import db
+from services import staff
 
 STORE = {
     "id": config.STORE_ID,
@@ -94,7 +95,15 @@ CUSTOMERS = [
     ("Demo Shopper", "", "demo@example.com"),
 ]
 
-EMPLOYEES = [("Anita Rao", "manager"), ("Vikram Singh", "staff")]
+# (name, username, password, role). Demo credentials on purpose -- they are
+# printed on the sign-in screen so the showcase can be handed to anyone. Change
+# them before this is ever exposed beyond a demo.
+EMPLOYEES = [
+    ("Anita Rao", "owner", "owner123", "owner"),
+    ("Vikram Singh", "manager", "manager123", "manager"),
+    ("Sara Iqbal", "staff", "staff123", "staff"),
+    ("Former Employee", "exstaff", "disabled123", "staff"),
+]
 
 # (customer index, sku, quantity, status)
 RESERVATIONS = [
@@ -182,10 +191,14 @@ def run(force=False):
             )
             customer_ids.append(cc.lastrowid)
 
-        for ename, role in EMPLOYEES:
+        for ename, username, password, role in EMPLOYEES:
             conn.execute(
-                "INSERT INTO employees (store_id, name, role) VALUES (?, ?, ?)",
-                (config.STORE_ID, ename, role),
+                """INSERT INTO employees (store_id, name, username, password_hash, role, status)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (config.STORE_ID, ename, username, staff.hash_password(password), role,
+                 # One account ships disabled so the "account switched off"
+                 # path is demonstrable without breaking a working login.
+                 "disabled" if username == "exstaff" else "active"),
             )
 
         # Past sales, dated backwards so the week's trend has shape.

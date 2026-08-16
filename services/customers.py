@@ -1,16 +1,41 @@
 """Customers and their wishlists."""
 import config
 import db
-from services import catalog
+from services import audit, catalog
+from services.security import require
 
 
 def get(customer_id):
     return db.query_one("SELECT * FROM customers WHERE id = ?", (customer_id,))
 
 
-def list_all():
+def list_all(actor=None):
+    if actor is not None:
+        require(actor, "customer.view")
     return db.query(
         "SELECT * FROM customers WHERE store_id = ? ORDER BY created_at DESC", (config.STORE_ID,))
+
+
+def update(actor, customer_id, fields):
+    """Edit a customer record. Manager and above only."""
+    require(actor, "customer.edit")
+    existing = get(customer_id)
+    if not existing:
+        raise ValueError("customer not found")
+
+    db.execute(
+        "UPDATE customers SET name = ?, phone = ?, email = ? WHERE id = ?",
+        (
+            fields.get("name", existing["name"]),
+            fields.get("phone", existing["phone"]),
+            fields.get("email", existing["email"]),
+            customer_id,
+        ),
+    )
+    # Field names only: a customer's phone number does not belong in the trail.
+    audit.record(actor, "customer.edit", "customer", customer_id,
+                 {"fields": sorted(fields.keys())})
+    return get(customer_id)
 
 
 def find_or_create(name, phone="", email=""):

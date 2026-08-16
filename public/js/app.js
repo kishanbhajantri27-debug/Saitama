@@ -1,7 +1,7 @@
 import { api, auth } from './api.js';
 import {
   bootstrap, exitMode, navigate, refreshCustomerBadges, refreshStaffBadges,
-  resolve, route, setMode, startRouter, state,
+  may, resolve, restoreSession, route, setMode, startRouter, state,
 } from './state.js';
 import { confirmSheet, errorBox, h, initTheme, setCurrency, toast, toggleTheme } from './ui.js';
 import * as C from './views/customer.js';
@@ -38,9 +38,12 @@ function shell({ title, sub, back = false, mode }) {
           <h1>${h(title)}</h1>
           ${sub ? `<div class="sub">${h(sub)}</div>` : ''}
         </div>
-        <span class="modepill"><span class="mode-full">${mode === 'store' ? 'Store' : 'Customer'} · </span>Demo</span>
+        <span class="modepill"><span class="mode-full">${
+          mode === 'store' ? h(state.user?.role || 'Store') : 'Customer'} · </span>Demo</span>
         <button class="iconbtn" id="theme" aria-label="Toggle theme">◐</button>
-        <button class="iconbtn" id="reset" aria-label="Reset demo" title="Reset demo data">↺</button>
+        ${mode === 'store' && may('demo.reset')
+          ? '<button class="iconbtn" id="reset" aria-label="Reset demo" title="Reset demo data">↺</button>'
+          : ''}
         <button class="iconbtn" id="exit" aria-label="Switch mode">⇄</button>
       </div>
     </header>
@@ -64,7 +67,8 @@ function frame(opts, render) {
 
   app.querySelector('#theme').onclick = () => toggleTheme();
   app.querySelector('#exit').onclick = () => exitMode();
-  app.querySelector('#reset').onclick = () => resetDemo();
+  const resetBtn = app.querySelector('#reset');
+  if (resetBtn) resetBtn.onclick = () => resetDemo();
   const back = app.querySelector('#back');
   if (back) back.onclick = () => history.back();
 
@@ -187,6 +191,7 @@ route('/store/reservations', () => storeFrame('Reservations', (s) => S.reservati
 route('/store/scan', () => storeFrame('Scanner', (s) => S.scanView(s)));
 route('/store/analytics', () => storeFrame('Sales', (s) => S.analyticsView(s)));
 route('/store/history', () => storeFrame('History', (s) => S.historyView(s)));
+route('/store/audit', () => storeFrame('Audit log', (s) => S.auditView(s)));
 
 /* ---------- boot ---------- */
 
@@ -205,6 +210,7 @@ route('/store/history', () => storeFrame('History', (s) => S.historyView(s)));
   }
 
   setCurrency(state.config?.currency);
+  await restoreSession();
   if (auth.isStaff) await refreshStaffBadges();
 
   // A returning visitor lands back in the mode they chose.

@@ -1,5 +1,5 @@
 import { api, auth } from '../api.js';
-import { navigate, refreshStaffBadges, state } from '../state.js';
+import { may, navigate, refreshStaffBadges, state } from '../state.js';
 import {
   barChart, confirmSheet, empty, errorBox, h, money, rankedBars,
   sheet, skeletonLines, statusLine, timeline, toast,
@@ -7,30 +7,59 @@ import {
 
 /* ---------- sign in ---------- */
 
+// Demo accounts, offered as one-tap buttons so the role differences can be
+// shown without anyone typing. These are seeded credentials for a showcase --
+// they are not secrets, and the server treats them like any other account.
+const DEMO_ACCOUNTS = [
+  ['owner', 'owner123', 'Owner', 'Full access, including staff and reset'],
+  ['manager', 'manager123', 'Manager', 'Stock-takes, rejections, analytics'],
+  ['staff', 'staff123', 'Staff', 'Counter work: stock moves and pickups'],
+];
+
 export function staffLoginView(mount) {
   mount.innerHTML = `
     <div class="wrap landing">
       <div class="logo">🏪</div>
-      <h1>Store mode</h1>
-      <p class="lede">Sign in to manage inventory, reservations and sales for ${h(state.store?.name || 'this store')}.</p>
-      <label class="field" style="margin-top:24px">
-        <span class="lbl">Staff passcode</span>
-        <input class="input" id="pass" type="password" inputmode="numeric" placeholder="••••" autocomplete="off">
+      <h1>Store sign-in</h1>
+      <p class="lede">Manage inventory, reservations and sales for ${h(state.store?.name || 'this store')}.</p>
+
+      <label class="field" style="margin-top:22px">
+        <span class="lbl">Username</span>
+        <input class="input" id="user" type="text" autocomplete="username" placeholder="owner">
+      </label>
+      <label class="field" style="margin-top:10px">
+        <span class="lbl">Password</span>
+        <input class="input" id="pass" type="password" autocomplete="current-password" placeholder="••••••••">
       </label>
       <p class="msg" id="msg" style="color:var(--bad);font-size:.82rem;min-height:18px;margin-top:8px"></p>
-      <button class="btn lg block" id="go">Enter store mode</button>
-      <p class="demonote">Demo passcode: <strong>${h(state.config?.demo_passcode || '2468')}</strong></p>
-      <button class="btn soft block" id="demo" style="margin-top:6px">🏪 Continue as demo manager</button>
-      <button class="btn ghost block" id="back" style="margin-top:10px">← Back</button>
+      <button class="btn lg block" id="go">Sign in</button>
+
+      <p class="demonote" style="margin-top:20px">Or sign in as a demo role — each one sees a different store</p>
+      <div class="stack" style="gap:8px;margin-top:8px">
+        ${DEMO_ACCOUNTS.map(([u, p, label, blurb]) => `
+          <button class="modecard" data-demo="${h(u)}" data-pass="${h(p)}">
+            <span class="ic">${u === 'owner' ? '👑' : u === 'manager' ? '🧑‍💼' : '🧑‍🔧'}</span>
+            <span style="flex:1">
+              <span class="t">${h(label)}</span>
+              <span class="d">${h(blurb)}</span>
+            </span>
+            <span style="color:var(--muted)">›</span>
+          </button>`).join('')}
+      </div>
+      <button class="btn ghost block" id="back" style="margin-top:14px">← Back</button>
     </div>`;
 
+  const user = mount.querySelector('#user');
   const pass = mount.querySelector('#pass');
   const msg = mount.querySelector('#msg');
-  const submit = async () => {
+
+  const submit = async (username, password) => {
     msg.textContent = '';
     try {
-      const { token } = await api.staffLogin(pass.value);
-      auth.token = token;
+      const res = await api.staffLogin(username ?? user.value, password ?? pass.value);
+      auth.token = res.token;
+      state.user = res.user;
+      state.permissions = new Set(res.permissions);
       await refreshStaffBadges();
       navigate('/store/dashboard');
     } catch (err) {
@@ -38,17 +67,15 @@ export function staffLoginView(mount) {
       pass.select();
     }
   };
-  mount.querySelector('#go').onclick = submit;
-  pass.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-  mount.querySelector('#back').onclick = () => navigate('/');
 
-  // One tap into store mode. The passcode screen stays because the auth seam
-  // is the thing real sign-in will replace; this just skips typing it.
-  mount.querySelector('#demo').onclick = () => {
-    pass.value = state.config?.demo_passcode || '2468';
-    submit();
-  };
-  pass.focus();
+  mount.querySelector('#go').onclick = () => submit();
+  pass.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+  user.onkeydown = (e) => { if (e.key === 'Enter') pass.focus(); };
+  mount.querySelector('#back').onclick = () => navigate('/');
+  mount.querySelectorAll('[data-demo]').forEach((b) => {
+    b.onclick = () => submit(b.dataset.demo, b.dataset.pass);
+  });
+  user.focus();
 }
 
 function guard() {
@@ -64,17 +91,32 @@ export async function dashboardView(mount) {
   const body = mount.querySelector('#body');
 
   try {
-    const o = await api.overview();
+    // A clerk cannot see takings, so the dashboard is assembled from whatever
+    // this role is allowed to read rather than failing whole. Asking for the
+    // sales figures and catching the 403 would work too, but deliberately not
+    // requesting them is the honest version.
+    const seesMoney = may('analytics.view');
+    const o = seesMoney
+      ? await api.overview()
+      : { today: null, inventory: await api.inventorySummary(), low_stock: [], trend: [] };
     const t = o.today;
+
     body.innerHTML = `
       <div class="sec-head" style="margin-bottom:12px"><h2>Today</h2>
         <span style="font-size:.78rem;color:var(--muted)">${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</span>
       </div>
       <div class="tiles">
-        <div class="tile accent"><div class="k">Sales</div><div class="v">${money(t.revenue)}</div><div class="sub">${t.orders} order${t.orders === 1 ? '' : 's'}</div></div>
-        <div class="tile"><div class="k">Reservations</div><div class="v">${t.reservations}</div><div class="sub">${t.pending_reservations} awaiting you</div></div>
-        <div class="tile"><div class="k">Low stock</div><div class="v">${t.low_stock}</div><div class="sub">need restocking</div></div>
-        <div class="tile"><div class="k">Out of stock</div><div class="v">${t.out_of_stock}</div><div class="sub">${t.stale_counts} stale counts</div></div>
+        ${seesMoney ? `
+          <div class="tile accent"><div class="k">Sales</div><div class="v">${money(t.revenue)}</div><div class="sub">${t.orders} order${t.orders === 1 ? '' : 's'}</div></div>
+          <div class="tile"><div class="k">Reservations</div><div class="v">${t.reservations}</div><div class="sub">${t.pending_reservations} awaiting you</div></div>
+          <div class="tile"><div class="k">Low stock</div><div class="v">${t.low_stock}</div><div class="sub">need restocking</div></div>
+          <div class="tile"><div class="k">Out of stock</div><div class="v">${t.out_of_stock}</div><div class="sub">${t.stale_counts} stale counts</div></div>
+        ` : `
+          <div class="tile accent"><div class="k">Awaiting you</div><div class="v">${state.pendingReservations}</div><div class="sub">reservations to action</div></div>
+          <div class="tile"><div class="k">Low stock</div><div class="v">${o.inventory.low_stock}</div><div class="sub">need restocking</div></div>
+          <div class="tile"><div class="k">Out of stock</div><div class="v">${o.inventory.out_of_stock}</div><div class="sub">of ${o.inventory.total_variants} lines</div></div>
+          <div class="tile"><div class="k">Stale counts</div><div class="v">${o.inventory.stale}</div><div class="sub">worth re-checking</div></div>
+        `}
       </div>
 
       <div class="sec">
@@ -83,21 +125,23 @@ export async function dashboardView(mount) {
           <button class="quick" data-go="/store/scan"><span class="ic">📷</span>Scan</button>
           <button class="quick" data-go="/store/inventory"><span class="ic">📦</span>Inventory</button>
           <button class="quick" data-go="/store/reservations"><span class="ic">🎟️</span>Reservations</button>
-          <button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>
-          <button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>
+          ${may('analytics.view') ? '<button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>' : ''}
+          ${may('inventory.history.view') ? '<button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>' : ''}
+          ${may('audit.view') ? '<button class="quick" data-go="/store/audit"><span class="ic">🛡️</span>Audit</button>' : ''}
         </div>
       </div>
 
-      <div class="sec">
-        <div class="sec-head"><h2>This week</h2><span style="font-size:.8rem;color:var(--muted)">${money(o.week_revenue)} · ${o.week_orders} orders</span></div>
-        <div class="card pad">${barChart(o.trend)}</div>
-      </div>
+      ${seesMoney ? `
+        <div class="sec">
+          <div class="sec-head"><h2>This week</h2><span style="font-size:.8rem;color:var(--muted)">${money(o.week_revenue)} · ${o.week_orders} orders</span></div>
+          <div class="card pad">${barChart(o.trend)}</div>
+        </div>` : ''}
 
       <div class="sec">
         <div class="sec-head"><h2>Inventory</h2><a class="link" href="#/store/inventory">Manage</a></div>
         <div class="tiles">
           <div class="tile"><div class="k">Products</div><div class="v">${o.inventory.total_products}</div><div class="sub">${o.inventory.total_variants} variants</div></div>
-          <div class="tile"><div class="k">Value</div><div class="v" style="font-size:1.15rem">${money(o.inventory.inventory_value)}</div><div class="sub">at retail</div></div>
+          ${seesMoney ? `<div class="tile"><div class="k">Value</div><div class="v" style="font-size:1.15rem">${money(o.inventory.inventory_value)}</div><div class="sub">at retail</div></div>` : ''}
         </div>
       </div>
 
@@ -192,7 +236,8 @@ export async function reservationsView(mount) {
         ${r.status === 'pending' ? `<button class="btn sm" data-act="accept" data-id="${r.id}">Accept</button>` : ''}
         ${['pending', 'accepted'].includes(r.status) ? `<button class="btn sm soft" data-act="ready" data-id="${r.id}">Mark ready</button>` : ''}
         ${['accepted', 'ready_for_pickup'].includes(r.status) ? `<button class="btn sm ok" data-act="complete" data-id="${r.id}">Complete pickup</button>` : ''}
-        ${r.is_open ? `<button class="btn sm ghost" data-act="reject" data-id="${r.id}">Reject</button>` : ''}
+        ${r.is_open && may('reservation.reject')
+          ? `<button class="btn sm ghost" data-act="reject" data-id="${r.id}">Reject</button>` : ''}
       </div>
     </div>`;
 
@@ -323,7 +368,7 @@ export function openStockSheet(row, onDone) {
       <select class="input" id="kind" style="flex:0 0 130px">
         <option value="add">Add stock</option>
         <option value="remove">Remove</option>
-        <option value="adjust">Set count</option>
+        ${may('inventory.stocktake') ? '<option value="adjust">Set count</option>' : ''}
       </select>
       <input class="input" id="qty" type="number" min="0" value="1" style="flex:1">
     </div>
@@ -584,6 +629,60 @@ export async function historyView(mount) {
       list.innerHTML = `<div class="card pad">${timeline(shown, {
         emptyText: kind === 'all' ? 'No activity recorded yet.' : 'Nothing of that kind yet.',
       })}</div>`;
+    } catch (err) {
+      if (err.status === 401) return navigate('/store/login', { replace: true });
+      list.innerHTML = errorBox(err.message);
+    }
+  }
+
+  drawFilters();
+  load();
+}
+
+/* ---------- audit log ---------- */
+
+export async function auditView(mount) {
+  if (!guard()) return;
+  mount.innerHTML = `
+    <div class="wrap" style="padding-top:16px">
+      <h2 style="margin-bottom:6px">Audit log</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+        Who did what, and when. Refused attempts are recorded too.
+      </p>
+      <div class="chips" id="f"></div>
+      <div id="list" style="margin-top:14px">${skeletonLines(5)}</div>
+    </div>`;
+
+  let outcome = '';
+  const drawFilters = () => {
+    mount.querySelector('#f').innerHTML = [['', 'All'], ['ok', 'Actions'], ['denied', 'Refused']]
+      .map(([k, l]) => `<button class="chip ${outcome === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('');
+    mount.querySelectorAll('[data-f]').forEach((b) => {
+      b.onclick = () => { outcome = b.dataset.f; drawFilters(); load(); };
+    });
+  };
+
+  async function load() {
+    const list = mount.querySelector('#list');
+    try {
+      const rows = await api.auditLog(outcome ? { outcome, limit: 100 } : { limit: 100 });
+      if (!rows.length) {
+        list.innerHTML = empty({ icon: '🛡️', title: 'Nothing logged yet' });
+        return;
+      }
+      list.innerHTML = `<div class="card pad"><ul class="tl">${rows.map((r) => `
+        <li>
+          <span class="tl-ic">${r.outcome === 'denied' ? '⛔' : '✅'}</span>
+          <span class="tl-body">
+            <span class="tl-top">
+              <span class="tl-label">${h(r.action)}</span>
+              <span class="tl-time">${h((r.created_at || '').slice(5, 16))}</span>
+            </span>
+            <span class="tl-sub">${h(r.actor_name)} (${h(r.actor_role)})${
+              r.entity_type ? ` · ${h(r.entity_type)} ${h(r.entity_id)}` : ''}</span>
+            ${r.detail ? `<span class="tl-sub" style="font-family:ui-monospace,monospace;font-size:.72rem">${h(r.detail)}</span>` : ''}
+          </span>
+        </li>`).join('')}</ul></div>`;
     } catch (err) {
       if (err.status === 401) return navigate('/store/login', { replace: true });
       list.innerHTML = errorBox(err.message);

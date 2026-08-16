@@ -5,9 +5,12 @@ from flask import Blueprint, jsonify, request, send_file
 import config
 import db
 import seed
-from api.auth import check_passcode, issue_token, require_staff, revoke
-from services import (analytics, catalog, customers, inventory, notifications,
-                      reservations, store)
+from api.auth import (current_actor, issue_token, require_permission, require_staff,
+                      revoke, revoke_all_for)
+from services import (analytics, audit, catalog, customers, inventory, notifications,
+                      reservations, staff, store)
+from services.security import (NotAuthenticated, PermissionDenied, matrix,
+                               permissions_for)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -28,19 +31,54 @@ def _reservation_error(err):
     return jsonify(error=str(err)), 400
 
 
+# A service refusing an operation must surface as 403, not 500 -- including
+# when a service is reached by a path the route layer did not gate.
+@api_bp.errorhandler(PermissionDenied)
+def _permission_denied(err):
+    return jsonify(error=str(err), permission=err.permission), 403
+
+
+@api_bp.errorhandler(NotAuthenticated)
+def _not_authenticated(err):
+    return jsonify(error=str(err)), 401
+
+
 # ---------- Session / store ----------
 
 @api_bp.post("/session/staff")
 def staff_login():
-    if not check_passcode(_body().get("passcode")):
-        return jsonify(error="wrong passcode"), 401
-    return jsonify(token=issue_token(), role="staff")
+    body = _body()
+    member = staff.authenticate(body.get("username"), body.get("password"))
+    if not member:
+        # One message for every failure mode. Saying which part was wrong tells
+        # an attacker which usernames exist.
+        audit.record(None, "auth.login_failed", "employee", "",
+                     {"username": (body.get("username") or "")[:64]}, outcome="denied")
+        return jsonify(error="wrong username or password"), 401
+
+    audit.record(member, "auth.login", "employee", member["id"])
+    return jsonify(
+        token=issue_token(member["id"]),
+        user=staff.public(member),
+        permissions=permissions_for(member["role"]),
+    )
 
 
 @api_bp.post("/session/staff/logout")
 def staff_logout():
+    actor = current_actor()
+    if actor:
+        audit.record(actor, "auth.logout", "employee", actor["id"])
     revoke(request.headers.get("X-Staff-Token", ""))
     return jsonify(ok=True)
+
+
+@api_bp.get("/session/me")
+@require_staff
+def session_me():
+    """Who am I and what may I do -- so the client can lay out its UI."""
+    actor = current_actor()
+    return jsonify(user=staff.public(actor), permissions=permissions_for(actor["role"]))
 
 
 @api_bp.get("/store")
@@ -57,7 +95,6 @@ def get_config():
         currency=config.CURRENCY,
         reservation_minutes=config.RESERVATION_MINUTES,
         low_stock_at=config.LOW_STOCK_AT,
-        demo_passcode=config.DEMO_PASSCODE_HINT,
     )
 
 
@@ -232,18 +269,18 @@ _STAFF_ACTIONS = {
 
 
 @api_bp.post("/reservations/<int:reservation_id>/<action>")
-@require_staff
+@require_staff  # per-action permission enforced in the service
 def act_on_reservation(reservation_id, action):
     handler = _STAFF_ACTIONS.get(action)
     if not handler:
         return jsonify(error=f"unknown action: {action}"), 404
-    return jsonify(handler(reservation_id))
+    return jsonify(handler(reservation_id, actor=current_actor()))
 
 
 # ---------- Inventory (store mode) ----------
 
 @api_bp.get("/inventory")
-@require_staff
+@require_permission("inventory.view")
 def get_inventory():
     rows = inventory.levels()
     q = (request.args.get("q") or "").strip().lower()
@@ -267,13 +304,13 @@ def get_inventory():
 
 
 @api_bp.get("/inventory/summary")
-@require_staff
+@require_permission("inventory.view")
 def inventory_summary():
     return jsonify(inventory.summary())
 
 
 @api_bp.post("/inventory/<int:variant_id>/movement")
-@require_staff
+@require_staff  # finer check in the service: adjust vs stocktake
 def move_stock(variant_id):
     body = _body()
     kind = body.get("kind")
@@ -284,7 +321,7 @@ def move_stock(variant_id):
         return jsonify(error="quantity must be a whole number"), 400
     try:
         row = inventory.change_stock(
-            variant_id, kind, quantity, note=body.get("note", ""), actor="staff")
+            variant_id, kind, quantity, note=body.get("note", ""), actor=current_actor())
     except ValueError as err:
         return jsonify(error=str(err)), 400
 
@@ -297,13 +334,13 @@ def move_stock(variant_id):
 
 
 @api_bp.post("/inventory/<int:variant_id>/touch")
-@require_staff
+@require_permission("inventory.adjust")
 def touch_stock(variant_id):
-    return jsonify(inventory.describe(inventory.touch(variant_id)))
+    return jsonify(inventory.describe(inventory.touch(variant_id, actor=current_actor())))
 
 
 @api_bp.get("/inventory/movements")
-@require_staff
+@require_permission("inventory.history.view")
 def movement_log():
     return jsonify(inventory.movements(
         limit=_int(request.args.get("limit"), 50) or 50,
@@ -323,15 +360,121 @@ def product_history(product_id):
     return jsonify(rows)
 
 
+# ---------- Customers (store mode) ----------
+
+@api_bp.get("/customers")
+@require_permission("customer.view")
+def list_customers():
+    return jsonify(customers.list_all(actor=current_actor()))
+
+
+@api_bp.put("/customers/<int:customer_id>")
+@require_permission("customer.edit", entity_type="customer")
+def update_customer(customer_id):
+    try:
+        return jsonify(customers.update(current_actor(), customer_id, _body()))
+    except ValueError as err:
+        return jsonify(error=str(err)), 404
+
+
+# ---------- Staff administration ----------
+
+@api_bp.get("/staff")
+@require_permission("staff.view")
+def list_staff():
+    return jsonify(staff.list_all(actor=current_actor()))
+
+
+@api_bp.post("/staff")
+@require_permission("staff.create")
+def create_staff():
+    body = _body()
+    try:
+        return jsonify(staff.create(
+            current_actor(), body.get("name"), body.get("username"),
+            body.get("password"), body.get("role", "staff"))), 201
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+
+
+@api_bp.put("/staff/<int:employee_id>/role")
+@require_permission("staff.edit", entity_type="employee")
+def change_staff_role(employee_id):
+    try:
+        member = staff.set_role(current_actor(), employee_id, _body().get("role"))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    # A demotion must not leave the old powers usable on an open session.
+    revoke_all_for(employee_id)
+    return jsonify(member)
+
+
+@api_bp.put("/staff/<int:employee_id>/status")
+@require_permission("staff.disable", entity_type="employee")
+def change_staff_status(employee_id):
+    status = _body().get("status")
+    try:
+        member = staff.set_status(current_actor(), employee_id, status)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    if status == "disabled":
+        revoke_all_for(employee_id)
+    return jsonify(member)
+
+
+@api_bp.put("/staff/<int:employee_id>/password")
+@require_staff  # own password allowed; the service decides
+def change_staff_password(employee_id):
+    try:
+        member = staff.set_password(current_actor(), employee_id, _body().get("password"))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(member)
+
+
+@api_bp.delete("/staff/<int:employee_id>")
+@require_permission("staff.edit", entity_type="employee")
+def delete_staff(employee_id):
+    try:
+        staff.delete(current_actor(), employee_id)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    revoke_all_for(employee_id)
+    return "", 204
+
+
+@api_bp.get("/permissions")
+def permission_matrix():
+    """The whole matrix. Public because it documents policy, not secrets."""
+    return jsonify(matrix())
+
+
+# ---------- Audit ----------
+
+@api_bp.get("/audit")
+@require_permission("audit.view")
+def audit_log():
+    return jsonify(audit.recent(
+        limit=_int(request.args.get("limit"), 100) or 100,
+        actor_id=_int(request.args.get("actor_id")),
+        action=request.args.get("action"),
+        outcome=request.args.get("outcome"),
+    ))
+
+
 # ---------- Demo controls ----------
 
 @api_bp.post("/demo/reset")
+@require_permission("demo.reset")
 def demo_reset():
     """Put the showcase back to its opening state.
 
-    Not staff-gated on purpose: whoever is running the demo needs it whichever
-    mode they are in, and there is nothing here but demo data.
+    Owner-only: it destroys every row in the store. Demo data or not, an
+    endpoint that wipes the database should not be reachable by anyone who
+    happens to find the URL.
     """
+    actor = current_actor()
+    audit.record(actor, "demo.reset", "store", config.STORE_ID)
     db.reset()
     seed.run(force=True)
     return jsonify(ok=True, message="Demo data restored")
@@ -340,12 +483,12 @@ def demo_reset():
 # ---------- Analytics (store mode) ----------
 
 @api_bp.get("/analytics/today")
-@require_staff
+@require_permission("analytics.view")
 def analytics_today():
     return jsonify(analytics.today())
 
 
 @api_bp.get("/analytics/overview")
-@require_staff
+@require_permission("analytics.view")
 def analytics_overview():
     return jsonify(analytics.overview())
