@@ -36,6 +36,11 @@ CURRENCY = "₹"
 # a system leaving demo.
 DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() not in ("false", "0", "no")
 
+# Set only when running behind a proxy you control. Off by default: a client
+# can send X-Forwarded-For itself, so trusting it without a proxy in front
+# would let anyone fake a new address per request and walk past rate limits.
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
+
 # Seeded account passwords. Set these to pin them; leave unset and seed.py
 # generates strong random ones instead of shipping known values in the repo.
 DEMO_PASSWORDS = {

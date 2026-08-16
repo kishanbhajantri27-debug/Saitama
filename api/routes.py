@@ -8,7 +8,7 @@ import seed
 from api.auth import (current_actor, issue_token, require_permission, require_staff,
                       revoke, revoke_all_for)
 from services import (analytics, audit, catalog, customers, inventory, notifications,
-                      reservations, staff, store)
+                      ratelimit, reservations, staff, store)
 from services.security import (NotAuthenticated, PermissionDenied, matrix,
                                permissions_for)
 
@@ -45,17 +45,51 @@ def _not_authenticated(err):
 
 # ---------- Session / store ----------
 
+def _client_address():
+    """Best-effort client address.
+
+    X-Forwarded-For is honoured only when a proxy is declared, because a
+    client can set that header freely -- trusting it unconditionally would let
+    anyone sidestep the per-address limit by inventing a new one each request.
+    """
+    if config.TRUST_PROXY:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
 @api_bp.post("/session/staff")
 def staff_login():
     body = _body()
-    member = staff.authenticate(body.get("username"), body.get("password"))
+    username = body.get("username")
+    address = _client_address()
+
+    # Checked before the password is even looked at, so a locked-out caller
+    # cannot keep testing guesses and cannot use response timing to tell a real
+    # username from a made-up one.
+    wait = ratelimit.check(username, address)
+    if wait:
+        audit.record(None, "auth.rate_limited", "employee", "",
+                     {"username": (username or "")[:64], "retry_after": wait},
+                     outcome="denied")
+        return (
+            jsonify(error="too many sign-in attempts, please wait and try again",
+                    retry_after=wait),
+            429,
+            {"Retry-After": str(wait)},
+        )
+
+    member = staff.authenticate(username, body.get("password"))
     if not member:
+        ratelimit.record_failure(username, address)
         # One message for every failure mode. Saying which part was wrong tells
         # an attacker which usernames exist.
         audit.record(None, "auth.login_failed", "employee", "",
-                     {"username": (body.get("username") or "")[:64]}, outcome="denied")
+                     {"username": (username or "")[:64]}, outcome="denied")
         return jsonify(error="wrong username or password"), 401
 
+    ratelimit.record_success(username, address)
     audit.record(member, "auth.login", "employee", member["id"])
     return jsonify(
         token=issue_token(member["id"]),

@@ -42,17 +42,29 @@ With it off the endpoint returns 404 and password sign-in is the only way in. Si
 
 Every meaningful action, and every refused attempt, lands in an audit log readable by managers and owners at `/store/audit`.
 
+### Login rate limiting
+
+Failed sign-ins are counted on a sliding window, per username (5 in 15 minutes) and per client address (20 in 15 minutes). Tripping either returns `429` with a `Retry-After`. A correct password clears that username's counter, so an ordinary typo or two costs nothing.
+
+Three details that matter more than the numbers:
+
+- **Unknown usernames are limited exactly like real ones.** Limiting only real accounts would turn the lockout into an oracle for which usernames exist.
+- **A locked account still refuses the correct password** until the window passes, or the limit would be bypassable by simply continuing to guess.
+- **`X-Forwarded-For` is ignored unless `TRUST_PROXY=true`.** Clients can set that header themselves, so honouring it without a proxy in front would let anyone invent a fresh address per request.
+
+Counters live in memory alongside sessions: a restart forgives everyone, and multiple worker processes would each keep their own tally. Both need a shared store before this runs anywhere real.
+
 ## Tests
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-196 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness and secret redaction, plus regressions pinning the stock arithmetic, reservation lifecycle and search.
+217 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness, secret redaction, login rate limiting, plus regressions pinning the stock arithmetic, reservation lifecycle and search.
 
 Demo data seeds itself on first boot: 8 products, 18 variants with SKUs and barcodes, stock at varied ages, customers, live reservations and a week of past sales. Delete `data/store.db` to start over.
 
-Optional `.env` (see `.env.example`): `STAFF_PASSCODE`, `PORT`, `STORE_ID`, `RESERVATION_MINUTES`, and SMTP settings for back-in-stock emails.
+Optional `.env` (see `.env.example`): `PORT`, `STORE_ID`, `RESERVATION_MINUTES`, `DEMO_MODE`, `TRUST_PROXY`, `DEMO_*_PASSWORD`, and SMTP settings for back-in-stock emails.
 
 ## Layout
 

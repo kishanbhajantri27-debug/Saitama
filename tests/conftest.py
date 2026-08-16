@@ -29,7 +29,7 @@ for _user, _pw in TEST_PASSWORDS.items():
 
 import db  # noqa: E402
 import seed  # noqa: E402
-from services import staff  # noqa: E402
+from services import ratelimit, staff  # noqa: E402
 from services.security import SYSTEM  # noqa: E402
 
 
@@ -38,8 +38,12 @@ def fresh_db():
     """A clean, seeded database per test, so order never matters."""
     db.reset()
     seed.run(force=True)
+    # The rate limiter is process-global, so failed logins in one test would
+    # otherwise lock out the next one.
+    ratelimit.reset_all()
     yield
     db.reset()
+    ratelimit.reset_all()
 
 
 @pytest.fixture
