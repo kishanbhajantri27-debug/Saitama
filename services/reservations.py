@@ -5,7 +5,7 @@ walkthrough is explicit about it -- 4 on hand, customer reserves one, available
 reads 3 straight away -- and it is the only safe reading: if the hold waited
 for staff, two customers could both reserve the last unit.
 
-    pending --accept--> accepted --ready--> ready --complete--> completed
+    pending --accept--> accepted --ready--> ready_for_pickup --complete--> completed
        |                    |                  |
        +---- reject/cancel/expire -------------+  (releases the hold)
 """
@@ -16,7 +16,7 @@ import config
 import db
 from services import inventory
 
-OPEN_STATES = ("pending", "accepted", "ready")
+OPEN_STATES = ("pending", "accepted", "ready_for_pickup")
 
 
 class ReservationError(Exception):
@@ -123,8 +123,6 @@ def create(variant_id, customer_id, quantity=1, note="", minutes=None, branch_id
         # customers cannot both claim the last unit.
         conn.execute(
             "UPDATE inventory SET reserved = reserved + ? WHERE id = ?", (quantity, stock["id"]))
-        inventory.record_movement(
-            conn, variant_id, "reserve", quantity, "customer reservation", "customer", branch_id)
 
         code = _code()
         while conn.execute("SELECT 1 FROM reservations WHERE code = ?", (code,)).fetchone():
@@ -138,6 +136,12 @@ def create(variant_id, customer_id, quantity=1, note="", minutes=None, branch_id
              quantity, note, _expiry(minutes)),
         )
         new_id = cur.lastrowid
+
+        # Logged after the insert so the timeline can name the reservation.
+        inventory.record_movement(
+            conn, variant_id, "RESERVATION", quantity, f"reserved as {code}", "customer",
+            branch_id, reserved_delta=quantity, reservation_id=new_id,
+        )
 
     return get(new_id)
 
@@ -160,8 +164,9 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
                 (row["quantity"], stock["id"]),
             )
             inventory.record_movement(
-                conn, row["variant_id"], "release", row["quantity"],
-                f"{new_status} {row['code']}", actor, row["branch_id"])
+                conn, row["variant_id"], "RESERVATION_RELEASE", row["quantity"],
+                f"{new_status} {row['code']}", actor, row["branch_id"],
+                reserved_delta=-row["quantity"], reservation_id=reservation_id)
 
         if consume_stock and stock:
             conn.execute(
@@ -172,9 +177,19 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
                 (row["quantity"], row["quantity"], stock["id"]),
             )
             inventory.record_movement(
-                conn, row["variant_id"], "pickup", row["quantity"],
-                f"picked up {row['code']}", actor, row["branch_id"])
+                conn, row["variant_id"], "PICKUP", row["quantity"],
+                f"picked up {row['code']}", actor, row["branch_id"],
+                on_hand_delta=-row["quantity"], reserved_delta=-row["quantity"],
+                reservation_id=reservation_id)
             _write_sale(conn, row)
+
+        # Accept and ready move no stock, but they belong on the timeline: the
+        # history exists to explain how a count reached its current value.
+        lifecycle = {"accepted": "RESERVATION_ACCEPTED", "ready_for_pickup": "RESERVATION_READY"}
+        if new_status in lifecycle:
+            inventory.record_movement(
+                conn, row["variant_id"], lifecycle[new_status], row["quantity"],
+                f"{row['code']}", actor, row["branch_id"], reservation_id=reservation_id)
 
         conn.execute(
             "UPDATE reservations SET status = ?, updated_at = datetime('now') WHERE id = ?",
@@ -234,22 +249,22 @@ def accept(reservation_id, actor="staff"):
 
 def mark_ready(reservation_id, actor="staff"):
     _require(reservation_id, ("pending", "accepted"))
-    return _set_status(reservation_id, "ready", actor=actor)
+    return _set_status(reservation_id, "ready_for_pickup", actor=actor)
 
 
 def reject(reservation_id, actor="staff"):
-    _require(reservation_id, ("pending", "accepted", "ready"))
+    _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
     return _set_status(reservation_id, "rejected", release_stock=True, actor=actor)
 
 
 def cancel(reservation_id, actor="customer"):
-    _require(reservation_id, ("pending", "accepted", "ready"))
+    _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
     return _set_status(reservation_id, "cancelled", release_stock=True, actor=actor)
 
 
 def complete(reservation_id, actor="staff"):
     """Hand the goods over: stock leaves the building and a sale is recorded."""
-    _require(reservation_id, ("accepted", "ready"))
+    _require(reservation_id, ("accepted", "ready_for_pickup"))
     return _set_status(reservation_id, "completed", consume_stock=True, actor=actor)
 
 

@@ -3,6 +3,8 @@ import io
 from flask import Blueprint, jsonify, request, send_file
 
 import config
+import db
+import seed
 from api.auth import check_passcode, issue_token, require_staff, revoke
 from services import (analytics, catalog, customers, inventory, notifications,
                       reservations, store)
@@ -306,7 +308,33 @@ def movement_log():
     return jsonify(inventory.movements(
         limit=_int(request.args.get("limit"), 50) or 50,
         variant_id=_int(request.args.get("variant_id")),
+        product_id=_int(request.args.get("product_id")),
     ))
+
+
+# Public: a shopper looking at a product may see how its count has moved. It
+# reveals nothing about who reserved what -- only that stock came and went.
+@api_bp.get("/products/<int:product_id>/history")
+def product_history(product_id):
+    rows = inventory.movements(limit=30, product_id=product_id)
+    for row in rows:
+        row.pop("actor", None)
+        row.pop("note", None)
+    return jsonify(rows)
+
+
+# ---------- Demo controls ----------
+
+@api_bp.post("/demo/reset")
+def demo_reset():
+    """Put the showcase back to its opening state.
+
+    Not staff-gated on purpose: whoever is running the demo needs it whichever
+    mode they are in, and there is nothing here but demo data.
+    """
+    db.reset()
+    seed.run(force=True)
+    return jsonify(ok=True, message="Demo data restored")
 
 
 # ---------- Analytics (store mode) ----------

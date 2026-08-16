@@ -69,16 +69,27 @@ CREATE TABLE IF NOT EXISTS inventory (
   UNIQUE(branch_id, variant_id)
 );
 
--- Append-only. Analytics and the dashboard read from here rather than from
--- mutated totals, so every number can be traced to the event that caused it.
+-- Append-only activity log. Analytics and the dashboard read from here rather
+-- than from mutated totals, so every number can be traced to the event that
+-- caused it.
+--
+-- Reservation lifecycle steps are logged too, with zero deltas. Accepting a
+-- reservation moves no stock, but it belongs on the product's timeline -- the
+-- history is meant to explain how a count got where it is, and "accepted" is
+-- part of that story.
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   store_id TEXT NOT NULL,
   branch_id TEXT NOT NULL,
   variant_id INTEGER NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN
-    ('add','remove','adjust','reserve','release','pickup')),
-  quantity INTEGER NOT NULL,
+    ('STOCK_RECEIVED','STOCK_ADJUSTMENT','SALE','RETURN',
+     'RESERVATION','RESERVATION_ACCEPTED','RESERVATION_READY',
+     'RESERVATION_RELEASE','PICKUP')),
+  quantity INTEGER NOT NULL DEFAULT 0,
+  on_hand_delta INTEGER NOT NULL DEFAULT 0,
+  reserved_delta INTEGER NOT NULL DEFAULT 0,
+  reservation_id INTEGER,
   note TEXT DEFAULT '',
   actor TEXT DEFAULT 'system',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -111,7 +122,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN
-    ('pending','accepted','ready','completed','rejected','expired','cancelled')),
+    ('pending','accepted','ready_for_pickup','completed','rejected','expired','cancelled')),
   note TEXT DEFAULT '',
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -198,12 +209,56 @@ def connect():
     return conn
 
 
+# Bumped whenever the schema changes shape. Everything in this database is
+# regenerated demo data, so a mismatch is resolved by rebuilding rather than by
+# writing a migration for data nobody needs to keep.
+SCHEMA_VERSION = 2
+
+TABLES = [
+    "notifications", "wishlists", "invoices", "payments", "orders",
+    "reservations", "inventory_movements", "inventory", "product_variants",
+    "products", "employees", "customers", "branches", "stores",
+]
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = connect()
     try:
         conn.execute("PRAGMA journal_mode = WAL")
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
+        has_tables = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'").fetchone()
+
+        if has_tables and current != SCHEMA_VERSION:
+            _drop_all(conn)
+
         conn.executescript(SCHEMA)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _drop_all(conn):
+    conn.execute("PRAGMA foreign_keys = OFF")
+    for table in TABLES:
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.execute("DELETE FROM sqlite_sequence")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def reset():
+    """Wipe everything and recreate the empty schema.
+
+    Backs the Reset Demo button: a showcase has to be repeatable, so the same
+    walkthrough can be given twice without the stock having drifted.
+    """
+    conn = connect()
+    try:
+        _drop_all(conn)
+        conn.executescript(SCHEMA)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
     finally:
         conn.close()

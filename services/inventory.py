@@ -4,7 +4,24 @@ from datetime import datetime, timezone
 import config
 import db
 
-MOVEMENT_KINDS = ("add", "remove", "adjust", "reserve", "release", "pickup")
+MOVEMENT_KINDS = (
+    "STOCK_RECEIVED", "STOCK_ADJUSTMENT", "SALE", "RETURN",
+    "RESERVATION", "RESERVATION_ACCEPTED", "RESERVATION_READY",
+    "RESERVATION_RELEASE", "PICKUP",
+)
+
+# What each event is called on a timeline a shopkeeper reads.
+MOVEMENT_LABELS = {
+    "STOCK_RECEIVED": "Stock received",
+    "STOCK_ADJUSTMENT": "Stock adjusted",
+    "SALE": "Sold",
+    "RETURN": "Returned",
+    "RESERVATION": "Reservation created",
+    "RESERVATION_ACCEPTED": "Reservation accepted",
+    "RESERVATION_READY": "Ready for pickup",
+    "RESERVATION_RELEASE": "Reservation released",
+    "PICKUP": "Pickup completed",
+}
 
 
 def _now():
@@ -103,14 +120,23 @@ def ensure_row(conn, variant_id, branch_id=None):
     )
 
 
-def record_movement(conn, variant_id, kind, quantity, note="", actor="system", branch_id=None):
+def record_movement(conn, variant_id, kind, quantity=0, note="", actor="system",
+                    branch_id=None, on_hand_delta=0, reserved_delta=0, reservation_id=None):
+    """Append one line to the product's timeline.
+
+    Deltas are signed and recorded separately for on-hand and reserved, so the
+    history can say "-1 available" for a hold and "-1 stock" for a pickup
+    without the reader having to infer which one moved.
+    """
     if kind not in MOVEMENT_KINDS:
         raise ValueError(f"unknown movement kind: {kind}")
     conn.execute(
         """INSERT INTO inventory_movements
-             (store_id, branch_id, variant_id, kind, quantity, note, actor)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (config.STORE_ID, branch_id or config.BRANCH_ID, variant_id, kind, quantity, note, actor),
+             (store_id, branch_id, variant_id, kind, quantity,
+              on_hand_delta, reserved_delta, reservation_id, note, actor)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (config.STORE_ID, branch_id or config.BRANCH_ID, variant_id, kind, quantity,
+         on_hand_delta, reserved_delta, reservation_id, note, actor),
     )
 
 
@@ -138,12 +164,15 @@ def change_stock(variant_id, kind, quantity, note="", actor="staff", branch_id=N
 
         if kind == "add":
             new_on_hand = row["on_hand"] + quantity
+            movement = "STOCK_RECEIVED"
         elif kind == "remove":
             new_on_hand = row["on_hand"] - quantity
+            movement = "STOCK_ADJUSTMENT"
             if new_on_hand < 0:
                 raise ValueError(f"cannot remove {quantity}; only {row['on_hand']} on hand")
         else:
             new_on_hand = quantity
+            movement = "STOCK_ADJUSTMENT"
 
         # Stock already promised to a customer cannot be counted away.
         if new_on_hand < row["reserved"]:
@@ -154,7 +183,10 @@ def change_stock(variant_id, kind, quantity, note="", actor="staff", branch_id=N
             "UPDATE inventory SET on_hand = ?, updated_at = datetime('now') WHERE id = ?",
             (new_on_hand, row["id"]),
         )
-        record_movement(conn, variant_id, kind, quantity, note, actor, branch_id)
+        record_movement(
+            conn, variant_id, movement, abs(new_on_hand - row["on_hand"]), note, actor,
+            branch_id, on_hand_delta=new_on_hand - row["on_hand"],
+        )
 
     return get(variant_id, branch_id)
 
@@ -201,21 +233,39 @@ def summary(branch_id=None):
     }
 
 
-def movements(limit=50, variant_id=None):
+def _describe_movement(row):
+    """Add the words a person reads: what happened and what it did to stock."""
+    row["label"] = MOVEMENT_LABELS.get(row["kind"], row["kind"])
+
+    # Availability is the net of both columns. A pickup drops on-hand and
+    # releases the hold at once, so availability does not move -- reporting the
+    # two deltas separately would claim it went up, which is not what happened.
+    available_delta = row["on_hand_delta"] - row["reserved_delta"]
+    row["available_delta"] = available_delta
+
+    effects = []
+    if row["on_hand_delta"]:
+        effects.append(f"{row['on_hand_delta']:+d} stock")
+    if available_delta:
+        effects.append(f"{available_delta:+d} available")
+    row["effect"] = " · ".join(effects)
+    return row
+
+
+def movements(limit=50, variant_id=None, product_id=None):
+    sql = """SELECT m.*, v.sku, v.label AS variant_label, p.name AS product_name,
+                    p.id AS product_id, r.code AS reservation_code
+             FROM inventory_movements m
+             JOIN product_variants v ON v.id = m.variant_id
+             JOIN products p ON p.id = v.product_id
+             LEFT JOIN reservations r ON r.id = m.reservation_id"""
+    params = []
     if variant_id:
-        return db.query(
-            """SELECT m.*, v.sku, p.name AS product_name
-               FROM inventory_movements m
-               JOIN product_variants v ON v.id = m.variant_id
-               JOIN products p ON p.id = v.product_id
-               WHERE m.variant_id = ? ORDER BY m.created_at DESC, m.id DESC LIMIT ?""",
-            (variant_id, limit),
-        )
-    return db.query(
-        """SELECT m.*, v.sku, p.name AS product_name
-           FROM inventory_movements m
-           JOIN product_variants v ON v.id = m.variant_id
-           JOIN products p ON p.id = v.product_id
-           ORDER BY m.created_at DESC, m.id DESC LIMIT ?""",
-        (limit,),
-    )
+        sql += " WHERE m.variant_id = ?"
+        params.append(variant_id)
+    elif product_id:
+        sql += " WHERE p.id = ?"
+        params.append(product_id)
+    sql += " ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
+    params.append(limit)
+    return [_describe_movement(r) for r in db.query(sql, tuple(params))]

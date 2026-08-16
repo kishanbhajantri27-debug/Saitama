@@ -145,6 +145,42 @@ export function rankedBars(rows, { nameKey = 'product_name', valueKey = 'revenue
     </div>`).join('')}</div>`;
 }
 
+/* ---------- movement timeline ---------- */
+
+const clockTime = (ts) => {
+  if (!ts) return '';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return ts.slice(11, 16);
+  const today = new Date().toDateString() === d.toDateString();
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  return today ? time : `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ${time}`;
+};
+
+const KIND_ICON = {
+  STOCK_RECEIVED: '📥', STOCK_ADJUSTMENT: '✏️', SALE: '💰', RETURN: '↩️',
+  RESERVATION: '🟡', RESERVATION_ACCEPTED: '🔵', RESERVATION_READY: '🟢',
+  RESERVATION_RELEASE: '⚪', PICKUP: '✅',
+};
+
+export function timeline(rows, { emptyText = 'No activity yet.' } = {}) {
+  if (!rows || !rows.length) return `<p class="empty" style="padding:20px">${h(emptyText)}</p>`;
+  return `<ul class="tl">${rows.map((r) => `
+    <li>
+      <span class="tl-ic">${KIND_ICON[r.kind] || '•'}</span>
+      <span class="tl-body">
+        <span class="tl-top">
+          <span class="tl-label">${h(r.label || r.kind)}</span>
+          <span class="tl-time">${h(clockTime(r.created_at))}</span>
+        </span>
+        <span class="tl-sub">
+          ${r.product_name ? `${h(r.product_name)}${r.variant_label ? ` · ${h(r.variant_label)}` : ''}` : ''}
+          ${r.reservation_code ? ` · ${h(r.reservation_code)}` : ''}
+        </span>
+        ${r.effect ? `<span class="tl-effect ${r.on_hand_delta < 0 || r.available_delta < 0 ? 'down' : 'up'}">${h(r.effect)}</span>` : ''}
+      </span>
+    </li>`).join('')}</ul>`;
+}
+
 /* ---------- theme ---------- */
 const THEME_KEY = 'theme';
 export function initTheme() {

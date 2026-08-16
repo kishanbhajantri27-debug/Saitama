@@ -166,9 +166,12 @@ def run(force=False):
                 )
                 conn.execute(
                     """INSERT INTO inventory_movements
-                         (store_id, branch_id, variant_id, kind, quantity, note, actor, created_at)
-                       VALUES (?, ?, ?, 'add', ?, 'opening stock', 'system', datetime('now', ?))""",
-                    (config.STORE_ID, config.BRANCH_ID, variant_id, on_hand, f"-{age} minutes"),
+                         (store_id, branch_id, variant_id, kind, quantity, on_hand_delta,
+                          note, actor, created_at)
+                       VALUES (?, ?, ?, 'STOCK_RECEIVED', ?, ?, 'opening stock', 'system',
+                               datetime('now', ?))""",
+                    (config.STORE_ID, config.BRANCH_ID, variant_id, on_hand, on_hand,
+                     f"-{age} minutes"),
                 )
 
         customer_ids = []
@@ -212,6 +215,14 @@ def run(force=False):
                 "INSERT INTO invoices (store_id, order_id, number, amount) VALUES (?, ?, ?, ?)",
                 (config.STORE_ID, oc.lastrowid, f"INV-{oc.lastrowid:05d}", total),
             )
+            conn.execute(
+                """INSERT INTO inventory_movements
+                     (store_id, branch_id, variant_id, kind, quantity, on_hand_delta,
+                      note, actor, created_at)
+                   VALUES (?, ?, ?, 'SALE', ?, ?, 'counter sale', 'staff',
+                           datetime('now', ?))""",
+                (config.STORE_ID, config.BRANCH_ID, variant_id, qty, -qty, f"-{days_ago} days"),
+            )
 
         # A couple of live reservations so the store queue is not empty on open.
         for idx, (cust_idx, sku, qty, status) in enumerate(RESERVATIONS):
@@ -230,9 +241,10 @@ def run(force=False):
             )
             conn.execute(
                 """INSERT INTO inventory_movements
-                     (store_id, branch_id, variant_id, kind, quantity, note, actor)
-                   VALUES (?, ?, ?, 'reserve', ?, 'demo reservation', 'customer')""",
-                (config.STORE_ID, config.BRANCH_ID, variant_id, qty),
+                     (store_id, branch_id, variant_id, kind, quantity, reserved_delta,
+                      note, actor)
+                   VALUES (?, ?, ?, 'RESERVATION', ?, ?, 'demo reservation', 'customer')""",
+                (config.STORE_ID, config.BRANCH_ID, variant_id, qty, qty),
             )
 
         # Wishlist and a waiting notify-me, so those screens have something to show.

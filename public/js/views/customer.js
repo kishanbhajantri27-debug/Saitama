@@ -1,8 +1,8 @@
 import { api, ApiError } from '../api.js';
 import { navigate, refreshCustomerBadges, state } from '../state.js';
 import {
-  barChart, confirmSheet, el, empty, errorBox, h, money, sheet,
-  skeletonGrid, skeletonLines, staleWarning, statusLine, toast,
+  confirmSheet, el, empty, errorBox, h, money, sheet,
+  skeletonGrid, skeletonLines, staleWarning, statusLine, timeline, toast,
 } from '../ui.js';
 
 const SEARCH_IDEAS = ['Nike shoes', 'Samsung charger', 'Black shirt', 'Notebook', 'Bluetooth headphones'];
@@ -289,14 +289,34 @@ export async function productView(mount, id) {
         </div>
 
         <div class="sec">
+          <div class="sec-head"><h2>Stock</h2></div>
+          <div class="card pad">
+            <div class="kv"><span class="k">In stock</span><span class="v">${s.on_hand}</span></div>
+            <div class="kv"><span class="k">Reserved by others</span><span class="v">${s.reserved}</span></div>
+            <div class="kv" style="border-top:1px solid var(--line);margin-top:4px;padding-top:10px">
+              <span class="k" style="font-weight:800;color:var(--ink)">Available to reserve</span>
+              <span class="v stat ${h(s.status)}" style="font-size:.95rem"><span class="dot"></span>${s.available}</span>
+            </div>
+            <div class="kv"><span class="k">Last counted</span><span class="v">${h(s.freshness.label)}</span></div>
+          </div>
+          <p style="font-size:.74rem;color:var(--muted);margin:8px 2px 0">
+            Available = in stock − reserved.
+          </p>
+        </div>
+
+        <div class="sec">
           <div class="sec-head"><h2>Details</h2></div>
           <div class="card pad">
             <div class="kv"><span class="k">SKU</span><span class="v">${h(selected.sku)}</span></div>
             <div class="kv"><span class="k">Barcode</span><span class="v">${h(selected.barcode || '—')}</span></div>
             <div class="kv"><span class="k">Category</span><span class="v">${h(product.category)}</span></div>
             <div class="kv"><span class="k">In store</span><span class="v">${h(state.store?.name || '')}, ${h(state.store?.city || '')}</span></div>
-            <div class="kv"><span class="k">Stock checked</span><span class="v">${h(s.freshness.label)}</span></div>
           </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><h2>Stock history</h2></div>
+          <div id="history" class="card pad"><div class="sk t" style="height:44px"></div></div>
         </div>
       </div>
 
@@ -329,7 +349,20 @@ export async function productView(mount, id) {
         toast('We will let you know when it is back', 'ok');
       } catch (err) { toast(err.message, 'err'); }
     };
+
+    loadHistory();
   };
+
+  async function loadHistory() {
+    const box = mount.querySelector('#history');
+    if (!box) return;
+    try {
+      const rows = await api.productHistory(product.id);
+      box.innerHTML = timeline(rows.slice(0, 8), { emptyText: 'No stock movements recorded yet.' });
+    } catch {
+      box.innerHTML = '<p class="empty" style="padding:16px">Stock history unavailable.</p>';
+    }
+  }
 
   render();
 }
@@ -400,7 +433,7 @@ function openReserveSheet(product, variant) {
 const STATUS_COPY = {
   pending: { icon: '🟡', title: 'Awaiting store confirmation', body: 'The store has your request and will confirm shortly.' },
   accepted: { icon: '🔵', title: 'Accepted — being prepared', body: 'The store accepted your reservation and is getting it ready.' },
-  ready: { icon: '🟢', title: 'Ready for pickup', body: 'Show this code at the counter to collect your item.' },
+  ready_for_pickup: { icon: '🟢', title: 'Ready for pickup', body: 'Show this code at the counter to collect your item.' },
   completed: { icon: '✅', title: 'Picked up', body: 'This reservation is complete. Thanks for shopping with us.' },
   rejected: { icon: '🔴', title: 'Declined', body: 'The store could not fulfil this one. The stock has been released.' },
   expired: { icon: '⌛', title: 'Expired', body: 'The hold ran out and the item went back on sale.' },
@@ -426,7 +459,7 @@ export async function reservationView(mount, id) {
           <p style="color:var(--muted);font-size:.87rem;margin-top:6px">${h(copy.body)}</p>
         </div>
 
-        ${['accepted', 'ready', 'pending'].includes(r.status) ? `
+        ${['accepted', 'ready_for_pickup', 'pending'].includes(r.status) ? `
           <div class="card pad" style="text-align:center">
             <div class="qrbox"><img src="/api/reservations/${r.id}/qr.svg" alt="Reservation QR code" width="168" height="168"></div>
             <div class="rescode" style="margin-top:12px">${h(r.code)}</div>

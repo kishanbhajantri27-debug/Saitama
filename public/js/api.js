@@ -103,7 +103,12 @@ export const api = {
   moveStock: (variantId, kind, quantity, note = '') =>
     call(`/inventory/${variantId}/movement`, { method: 'POST', staff: true, body: { kind, quantity, note } }),
   touchStock: (variantId) => call(`/inventory/${variantId}/touch`, { method: 'POST', staff: true }),
-  movements: (limit = 30) => call(`/inventory/movements?limit=${limit}`, { staff: true }),
+  movements: (params = {}) => {
+    const q = new URLSearchParams({ limit: 40, ...params }).toString();
+    return call(`/inventory/movements?${q}`, { staff: true });
+  },
+  productHistory: (productId) => call(`/products/${productId}/history`),
+  resetDemo: () => call('/demo/reset', { method: 'POST' }),
 
   today: () => call('/analytics/today', { staff: true }),
   overview: () => call('/analytics/overview', { staff: true }),

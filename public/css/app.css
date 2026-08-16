@@ -263,7 +263,7 @@ img { display: block; max-width: 100%; }
 }
 .badge.pending   { background: var(--warn-bg); color: var(--warn); }
 .badge.accepted  { background: var(--info-bg); color: var(--accent); }
-.badge.ready     { background: var(--ok-bg); color: var(--ok); }
+.badge.ready, .badge.ready_for_pickup { background: var(--ok-bg); color: var(--ok); }
 .badge.completed { background: var(--ok-bg); color: var(--ok); }
 .badge.rejected, .badge.expired, .badge.cancelled { background: var(--bad-bg); color: var(--bad); }
 .badge.neutral { background: var(--line-2); color: var(--ink-2); }
@@ -384,6 +384,23 @@ tbody tr:hover { background: var(--surface-2); }
 .reticle { position: absolute; inset: 16% 10%; border: 2px solid rgba(255,255,255,.85); border-radius: 12px; box-shadow: 0 0 0 2000px rgba(0,0,0,.35); }
 .reticle::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #48ff9c; animation: scanline 2s ease-in-out infinite; }
 @keyframes scanline { 0%,100% { top: 8% } 50% { top: 92% } }
+
+/* ============ timeline ============ */
+.tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tl li { display: flex; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--line-2); }
+.tl li:last-child { border-bottom: none; }
+.tl li:first-child { padding-top: 0; }
+.tl-ic { width: 26px; height: 26px; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--surface-2); border-radius: 50%; font-size: .82rem; }
+.tl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tl-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.tl-label { font-weight: 700; font-size: .87rem; }
+.tl-time { font-size: .74rem; color: var(--muted); flex-shrink: 0; }
+.tl-sub { font-size: .78rem; color: var(--muted); }
+.tl-sub:empty { display: none; }
+.tl-effect { font-size: .76rem; font-weight: 800; margin-top: 2px; }
+.tl-effect.down { color: var(--bad); }
+.tl-effect.up { color: var(--ok); }
 
 /* ============ charts ============ */
 .chart { width: 100%; height: 168px; display: block; overflow: visible; }

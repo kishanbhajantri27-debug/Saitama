@@ -1,9 +1,9 @@
-import { auth } from './api.js';
+import { api, auth } from './api.js';
 import {
   bootstrap, exitMode, navigate, refreshCustomerBadges, refreshStaffBadges,
-  route, setMode, startRouter, state,
+  resolve, route, setMode, startRouter, state,
 } from './state.js';
-import { errorBox, h, initTheme, setCurrency, toggleTheme } from './ui.js';
+import { confirmSheet, errorBox, h, initTheme, setCurrency, toast, toggleTheme } from './ui.js';
 import * as C from './views/customer.js';
 import * as S from './views/store.js';
 
@@ -40,6 +40,7 @@ function shell({ title, sub, back = false, mode }) {
         </div>
         <span class="modepill"><span class="mode-full">${mode === 'store' ? 'Store' : 'Customer'} · </span>Demo</span>
         <button class="iconbtn" id="theme" aria-label="Toggle theme">◐</button>
+        <button class="iconbtn" id="reset" aria-label="Reset demo" title="Reset demo data">↺</button>
         <button class="iconbtn" id="exit" aria-label="Switch mode">⇄</button>
       </div>
     </header>
@@ -63,6 +64,7 @@ function frame(opts, render) {
 
   app.querySelector('#theme').onclick = () => toggleTheme();
   app.querySelector('#exit').onclick = () => exitMode();
+  app.querySelector('#reset').onclick = () => resetDemo();
   const back = app.querySelector('#back');
   if (back) back.onclick = () => history.back();
 
@@ -71,6 +73,27 @@ function frame(opts, render) {
   });
 
   render(screen);
+}
+
+/** Put the showcase back to its opening state so it can be given again. */
+async function resetDemo() {
+  const yes = await confirmSheet({
+    title: 'Reset the demo?',
+    body: 'Stock, reservations, sales and wishlists all go back to how they started. Nothing real is affected.',
+    confirmLabel: 'Reset demo',
+  });
+  if (!yes) return;
+  try {
+    await api.resetDemo();
+    // The reseeded database issues new ids, so anything the browser remembered
+    // about who it was now points at a row that no longer exists.
+    localStorage.removeItem('customerId');
+    await bootstrap();
+    toast('Demo restored to its original state', 'ok');
+    resolve();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
 }
 
 /* ---------- landing ---------- */
@@ -163,6 +186,7 @@ route('/store/inventory', () => storeFrame('Inventory', (s) => S.inventoryView(s
 route('/store/reservations', () => storeFrame('Reservations', (s) => S.reservationsView(s)));
 route('/store/scan', () => storeFrame('Scanner', (s) => S.scanView(s)));
 route('/store/analytics', () => storeFrame('Sales', (s) => S.analyticsView(s)));
+route('/store/history', () => storeFrame('History', (s) => S.historyView(s)));
 
 /* ---------- boot ---------- */
 

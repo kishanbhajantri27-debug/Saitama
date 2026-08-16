@@ -2,7 +2,7 @@ import { api, auth } from '../api.js';
 import { navigate, refreshStaffBadges, state } from '../state.js';
 import {
   barChart, confirmSheet, empty, errorBox, h, money, rankedBars,
-  sheet, skeletonLines, statusLine, toast,
+  sheet, skeletonLines, statusLine, timeline, toast,
 } from '../ui.js';
 
 /* ---------- sign in ---------- */
@@ -20,6 +20,7 @@ export function staffLoginView(mount) {
       <p class="msg" id="msg" style="color:var(--bad);font-size:.82rem;min-height:18px;margin-top:8px"></p>
       <button class="btn lg block" id="go">Enter store mode</button>
       <p class="demonote">Demo passcode: <strong>${h(state.config?.demo_passcode || '2468')}</strong></p>
+      <button class="btn soft block" id="demo" style="margin-top:6px">🏪 Continue as demo manager</button>
       <button class="btn ghost block" id="back" style="margin-top:10px">← Back</button>
     </div>`;
 
@@ -40,6 +41,13 @@ export function staffLoginView(mount) {
   mount.querySelector('#go').onclick = submit;
   pass.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
   mount.querySelector('#back').onclick = () => navigate('/');
+
+  // One tap into store mode. The passcode screen stays because the auth seam
+  // is the thing real sign-in will replace; this just skips typing it.
+  mount.querySelector('#demo').onclick = () => {
+    pass.value = state.config?.demo_passcode || '2468';
+    submit();
+  };
   pass.focus();
 }
 
@@ -76,6 +84,7 @@ export async function dashboardView(mount) {
           <button class="quick" data-go="/store/inventory"><span class="ic">📦</span>Inventory</button>
           <button class="quick" data-go="/store/reservations"><span class="ic">🎟️</span>Reservations</button>
           <button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>
+          <button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>
         </div>
       </div>
 
@@ -117,7 +126,7 @@ export async function dashboardView(mount) {
 /* ---------- reservations ---------- */
 
 const FILTERS = [
-  ['pending', 'Pending'], ['accepted', 'Accepted'], ['ready', 'Ready'],
+  ['pending', 'Pending'], ['accepted', 'Accepted'], ['ready_for_pickup', 'Ready'],
   ['completed', 'Completed'], ['all', 'All'],
 ];
 
@@ -162,7 +171,7 @@ export async function reservationsView(mount) {
     <div class="card pad">
       <div class="row between" style="align-items:flex-start">
         <div style="min-width:0">
-          <div class="row" style="gap:8px"><span class="badge ${h(r.status)}">${h(r.status)}</span>
+          <div class="row" style="gap:8px"><span class="badge ${h(r.status)}">${h(r.status.replace(/_/g, " "))}</span>
             <span class="sku" style="font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted)">${h(r.code)}</span></div>
           <div style="font-weight:800;margin-top:8px">${h(r.customer_name)}</div>
           <div style="font-size:.84rem;color:var(--ink-2)">${h(r.product_name)} · ${h(r.variant_label)}</div>
@@ -174,7 +183,7 @@ export async function reservationsView(mount) {
           ${r.image_url ? `<img src="${h(r.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ''}
         </div>
       </div>
-      ${r.status === 'ready' ? `
+      ${r.status === 'ready_for_pickup' ? `
         <div class="row" style="gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2)">
           <div class="qrbox" style="padding:6px"><img src="/api/reservations/${r.id}/qr.svg" alt="" style="width:76px;height:76px"></div>
           <div style="font-size:.8rem;color:var(--muted)">Customer shows this code at the counter.</div>
@@ -182,7 +191,7 @@ export async function reservationsView(mount) {
       <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
         ${r.status === 'pending' ? `<button class="btn sm" data-act="accept" data-id="${r.id}">Accept</button>` : ''}
         ${['pending', 'accepted'].includes(r.status) ? `<button class="btn sm soft" data-act="ready" data-id="${r.id}">Mark ready</button>` : ''}
-        ${['accepted', 'ready'].includes(r.status) ? `<button class="btn sm ok" data-act="complete" data-id="${r.id}">Complete pickup</button>` : ''}
+        ${['accepted', 'ready_for_pickup'].includes(r.status) ? `<button class="btn sm ok" data-act="complete" data-id="${r.id}">Complete pickup</button>` : ''}
         ${r.is_open ? `<button class="btn sm ghost" data-act="reject" data-id="${r.id}">Reject</button>` : ''}
       </div>
     </div>`;
@@ -447,10 +456,13 @@ export async function scanView(mount) {
       const r = await api.reservationByCode(code);
       out.innerHTML = `
         <div class="card pad">
-          <div class="row between"><span class="badge ${h(r.status)}">${h(r.status)}</span><span class="rescode" style="font-size:.95rem">${h(r.code)}</span></div>
+          ${['accepted', 'ready_for_pickup'].includes(r.status)
+            ? '<div style="font-weight:800;color:var(--ok);font-size:1rem;margin-bottom:10px">RESERVATION VERIFIED &#9989;</div>'
+            : ''}
+          <div class="row between"><span class="badge ${h(r.status)}">${h(r.status.replace(/_/g, ' '))}</span><span class="rescode" style="font-size:.95rem">${h(r.code)}</span></div>
           <div style="font-weight:800;margin-top:10px">${h(r.customer_name)}</div>
           <div style="font-size:.85rem;color:var(--ink-2)">${h(r.product_name)} · ${h(r.variant_label)} · qty ${r.quantity}</div>
-          ${['accepted', 'ready'].includes(r.status)
+          ${['accepted', 'ready_for_pickup'].includes(r.status)
             ? `<button class="btn ok block" id="done" style="margin-top:12px">Complete pickup</button>`
             : `<p style="font-size:.82rem;color:var(--muted);margin-top:10px">This reservation is ${h(r.status)} — nothing to hand over.</p>`}
         </div>`;
@@ -479,7 +491,7 @@ export async function scanView(mount) {
         // Grab a live reservation so the demo always has something real to open.
         try {
           const rows = await api.reservations({ status: 'all' });
-          const open = rows.find((r) => ['accepted', 'ready'].includes(r.status)) || rows[0];
+          const open = rows.find((r) => ['accepted', 'ready_for_pickup'].includes(r.status)) || rows[0];
           code = open ? open.code : 'RSV-00000';
         } catch { code = 'RSV-00000'; }
       }
@@ -529,6 +541,57 @@ export async function scanView(mount) {
     camnote.textContent = 'Camera permission denied — use the code field below.';
     mount.querySelector('#view').style.display = 'none';
   }
+}
+
+/* ---------- inventory history ---------- */
+
+export async function historyView(mount) {
+  if (!guard()) return;
+  mount.innerHTML = `
+    <div class="wrap" style="padding-top:16px">
+      <h2 style="margin-bottom:6px">Inventory history</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+        Every event that moved a count, newest first.
+      </p>
+      <div class="chips" id="f"></div>
+      <div id="list" style="margin-top:14px">${skeletonLines(4)}</div>
+    </div>`;
+
+  let kind = 'all';
+  const KINDS = [
+    ['all', 'All'], ['RESERVATION', 'Reservations'], ['PICKUP', 'Pickups'],
+    ['SALE', 'Sales'], ['STOCK_RECEIVED', 'Received'], ['STOCK_ADJUSTMENT', 'Adjustments'],
+  ];
+
+  const drawFilters = () => {
+    mount.querySelector('#f').innerHTML = KINDS.map(([k, l]) =>
+      `<button class="chip ${kind === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('');
+    mount.querySelectorAll('[data-f]').forEach((b) => {
+      b.onclick = () => { kind = b.dataset.f; drawFilters(); load(); };
+    });
+  };
+
+  async function load() {
+    const list = mount.querySelector('#list');
+    try {
+      const rows = await api.movements({ limit: 80 });
+      // Reservation lifecycle rows group under the Reservations filter, since
+      // a shopkeeper thinks of them as one thread rather than five kinds.
+      const shown = kind === 'all' ? rows
+        : kind === 'RESERVATION'
+          ? rows.filter((r) => r.kind.startsWith('RESERVATION'))
+          : rows.filter((r) => r.kind === kind);
+      list.innerHTML = `<div class="card pad">${timeline(shown, {
+        emptyText: kind === 'all' ? 'No activity recorded yet.' : 'Nothing of that kind yet.',
+      })}</div>`;
+    } catch (err) {
+      if (err.status === 401) return navigate('/store/login', { replace: true });
+      list.innerHTML = errorBox(err.message);
+    }
+  }
+
+  drawFilters();
+  load();
 }
 
 /* ---------- analytics ---------- */
