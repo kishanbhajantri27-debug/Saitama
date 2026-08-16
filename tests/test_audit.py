@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from conftest import TEST_PASSWORDS
+
 from services import audit, inventory, reservations, staff
 
 
@@ -148,4 +150,4 @@ class TestAuditOverHttp:
     def test_audit_response_carries_no_secrets(self, client, owner_headers):
         text = client.get("/api/audit", headers=owner_headers).get_data(as_text=True)
         assert "scrypt$" not in text
-        assert "owner123" not in text
+        assert TEST_PASSWORDS["owner"] not in text

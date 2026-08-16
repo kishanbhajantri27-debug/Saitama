@@ -6,6 +6,8 @@ what the interface happens to show.
 """
 import pytest
 
+from conftest import TEST_PASSWORDS
+
 # (method, path, permission-holding roles). Anyone outside the set gets a 403,
 # and no token at all gets a 401.
 PROTECTED = [
@@ -42,8 +44,8 @@ class TestUnauthenticatedAccess:
 class TestRoleBoundaries:
     @pytest.mark.parametrize("method,path,allowed", PROTECTED)
     def test_each_role_gets_the_right_answer(self, client, login, method, path, allowed):
-        for role, password in [("owner", "owner123"), ("manager", "manager123"),
-                               ("staff", "staff123")]:
+        for role, password in [("owner", TEST_PASSWORDS["owner"]), ("manager", TEST_PASSWORDS["manager"]),
+                               ("staff", TEST_PASSWORDS["staff"])]:
             headers = login(role, password)
             status = client.open(path, method=method, headers=headers).status_code
             if role in allowed:
@@ -164,7 +166,7 @@ class TestSessionInvalidation:
                                                          clerk):
         client.put(f"/api/staff/{clerk['id']}/role", headers=owner_headers,
                    json={"role": "manager"})
-        headers = login("staff", "staff123")
+        headers = login("staff", TEST_PASSWORDS["staff"])
         assert client.get("/api/analytics/today", headers=headers).status_code == 200
 
     def test_logout_invalidates(self, client, staff_headers):
@@ -175,7 +177,7 @@ class TestSessionInvalidation:
 class TestLoginEndpoint:
     def test_login_returns_a_token_and_permissions(self, client):
         res = client.post("/api/session/staff",
-                          json={"username": "owner", "password": "owner123"})
+                          json={"username": "owner", "password": TEST_PASSWORDS["owner"]})
         body = res.get_json()
         assert res.status_code == 200
         assert body["token"]
@@ -184,16 +186,16 @@ class TestLoginEndpoint:
 
     def test_login_response_has_no_secrets(self, client):
         text = client.post("/api/session/staff",
-                           json={"username": "owner", "password": "owner123"}
+                           json={"username": "owner", "password": TEST_PASSWORDS["owner"]}
                            ).get_data(as_text=True)
-        assert "owner123" not in text
+        assert TEST_PASSWORDS["owner"] not in text
         assert "password_hash" not in text
         assert "scrypt$" not in text
 
     @pytest.mark.parametrize("payload", [
         {"username": "owner", "password": "wrong"},
-        {"username": "ghost", "password": "owner123"},
-        {"username": "exstaff", "password": "disabled123"},
+        {"username": "ghost", "password": TEST_PASSWORDS["owner"]},
+        {"username": "exstaff", "password": TEST_PASSWORDS["exstaff"]},
         {},
     ])
     def test_failures_are_indistinguishable(self, client, payload):

@@ -15,7 +15,17 @@ sys.path.insert(0, ROOT)
 
 _TMP = tempfile.mkdtemp(prefix="store-tests-")
 os.environ["STORE_DB_PATH"] = os.path.join(_TMP, "test.db")
-os.environ.setdefault("ADMIN_PASS", "test-only-not-a-real-secret")
+# Pin the seeded passwords so tests can sign in. Nothing here ships: these
+# names only exist inside the suite, and the app generates random ones when
+# they are unset.
+TEST_PASSWORDS = {
+    "owner": "test-owner-pw",
+    "manager": "test-manager-pw",
+    "staff": "test-staff-pw",
+    "exstaff": "test-exstaff-pw",
+}
+for _user, _pw in TEST_PASSWORDS.items():
+    os.environ[f"DEMO_{_user.upper()}_PASSWORD"] = _pw
 
 import db  # noqa: E402
 import seed  # noqa: E402
@@ -83,17 +93,17 @@ def login(client):
 
 @pytest.fixture
 def owner_headers(login):
-    return login("owner", "owner123")
+    return login("owner", TEST_PASSWORDS["owner"])
 
 
 @pytest.fixture
 def manager_headers(login):
-    return login("manager", "manager123")
+    return login("manager", TEST_PASSWORDS["manager"])
 
 
 @pytest.fixture
 def staff_headers(login):
-    return login("staff", "staff123")
+    return login("staff", TEST_PASSWORDS["staff"])
 
 
 @pytest.fixture

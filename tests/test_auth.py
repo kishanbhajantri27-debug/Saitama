@@ -1,6 +1,8 @@
 """Authentication: passwords, sessions, disabled and deleted accounts."""
 import pytest
 
+from conftest import TEST_PASSWORDS
+
 from services import staff
 from services.security import NotAuthenticated, PermissionDenied
 
@@ -36,27 +38,27 @@ class TestPasswordHashing:
 
 class TestAuthenticate:
     def test_valid_credentials(self):
-        assert staff.authenticate("owner", "owner123")["role"] == "owner"
+        assert staff.authenticate("owner", TEST_PASSWORDS["owner"])["role"] == "owner"
 
     def test_wrong_password(self):
         assert staff.authenticate("owner", "nope") is None
 
     def test_unknown_username(self):
-        assert staff.authenticate("nobody", "owner123") is None
+        assert staff.authenticate("nobody", TEST_PASSWORDS["owner"]) is None
 
     def test_disabled_account_cannot_authenticate(self):
         """Right password, switched-off account: still no."""
-        assert staff.authenticate("exstaff", "disabled123") is None
+        assert staff.authenticate("exstaff", TEST_PASSWORDS["exstaff"]) is None
 
     def test_username_is_case_insensitive(self):
-        assert staff.authenticate("OWNER", "owner123") is not None
+        assert staff.authenticate("OWNER", TEST_PASSWORDS["owner"]) is not None
 
     def test_password_is_case_sensitive(self):
         assert staff.authenticate("owner", "OWNER123") is None
 
     def test_last_login_recorded(self):
         before = staff.get_by_username("owner")["last_login_at"]
-        staff.authenticate("owner", "owner123")
+        staff.authenticate("owner", TEST_PASSWORDS["owner"])
         assert staff.get_by_username("owner")["last_login_at"] != before or before is None
 
 
@@ -106,22 +108,22 @@ class TestAccountLifecycle:
         assert can(staff.get(clerk["id"]), "analytics.view")
 
     def test_disabling_blocks_login_immediately(self, owner, clerk):
-        assert staff.authenticate("staff", "staff123") is not None
+        assert staff.authenticate("staff", TEST_PASSWORDS["staff"]) is not None
         staff.set_status(owner, clerk["id"], "disabled")
-        assert staff.authenticate("staff", "staff123") is None
+        assert staff.authenticate("staff", TEST_PASSWORDS["staff"]) is None
 
     def test_reenabling_restores_login(self, owner, disabled_user):
         staff.set_status(owner, disabled_user["id"], "active")
-        assert staff.authenticate("exstaff", "disabled123") is not None
+        assert staff.authenticate("exstaff", TEST_PASSWORDS["exstaff"]) is not None
 
     def test_deleted_account_cannot_authenticate(self, owner, clerk):
         staff.delete(owner, clerk["id"])
-        assert staff.authenticate("staff", "staff123") is None
+        assert staff.authenticate("staff", TEST_PASSWORDS["staff"]) is None
         assert staff.get(clerk["id"]) is None
 
     def test_password_change_invalidates_the_old_one(self, owner, clerk):
         staff.set_password(owner, clerk["id"], "brand-new-pass")
-        assert staff.authenticate("staff", "staff123") is None
+        assert staff.authenticate("staff", TEST_PASSWORDS["staff"]) is None
         assert staff.authenticate("staff", "brand-new-pass") is not None
 
     def test_anyone_may_change_their_own_password(self, clerk):

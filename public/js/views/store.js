@@ -7,13 +7,13 @@ import {
 
 /* ---------- sign in ---------- */
 
-// Demo accounts, offered as one-tap buttons so the role differences can be
-// shown without anyone typing. These are seeded credentials for a showcase --
-// they are not secrets, and the server treats them like any other account.
-const DEMO_ACCOUNTS = [
-  ['owner', 'owner123', 'Owner', 'Full access, including staff and reset'],
-  ['manager', 'manager123', 'Manager', 'Stock-takes, rejections, analytics'],
-  ['staff', 'staff123', 'Staff', 'Counter work: stock moves and pickups'],
+// Demo roles. No passwords here -- the client never learns a credential.
+// Tapping one asks the server for a demo session, which it grants only while
+// DEMO_MODE is on.
+const DEMO_ROLES = [
+  ['owner', '👑', 'Owner', 'Full access, including staff and reset'],
+  ['manager', '🧑‍💼', 'Manager', 'Stock-takes, rejections, analytics'],
+  ['staff', '🧑‍🔧', 'Staff', 'Counter work: stock moves and pickups'],
 ];
 
 export function staffLoginView(mount) {
@@ -34,18 +34,19 @@ export function staffLoginView(mount) {
       <p class="msg" id="msg" style="color:var(--bad);font-size:.82rem;min-height:18px;margin-top:8px"></p>
       <button class="btn lg block" id="go">Sign in</button>
 
-      <p class="demonote" style="margin-top:20px">Or sign in as a demo role — each one sees a different store</p>
-      <div class="stack" style="gap:8px;margin-top:8px">
-        ${DEMO_ACCOUNTS.map(([u, p, label, blurb]) => `
-          <button class="modecard" data-demo="${h(u)}" data-pass="${h(p)}">
-            <span class="ic">${u === 'owner' ? '👑' : u === 'manager' ? '🧑‍💼' : '🧑‍🔧'}</span>
-            <span style="flex:1">
-              <span class="t">${h(label)}</span>
-              <span class="d">${h(blurb)}</span>
-            </span>
-            <span style="color:var(--muted)">›</span>
-          </button>`).join('')}
-      </div>
+      ${state.config?.demo_mode ? `
+        <p class="demonote" style="margin-top:20px">Or explore as a demo role — each one sees a different store</p>
+        <div class="stack" style="gap:8px;margin-top:8px">
+          ${DEMO_ROLES.map(([role, icon, label, blurb]) => `
+            <button class="modecard" data-demo="${h(role)}">
+              <span class="ic">${icon}</span>
+              <span style="flex:1">
+                <span class="t">${h(label)}</span>
+                <span class="d">${h(blurb)}</span>
+              </span>
+              <span style="color:var(--muted)">›</span>
+            </button>`).join('')}
+        </div>` : ''}
       <button class="btn ghost block" id="back" style="margin-top:14px">← Back</button>
     </div>`;
 
@@ -53,15 +54,19 @@ export function staffLoginView(mount) {
   const pass = mount.querySelector('#pass');
   const msg = mount.querySelector('#msg');
 
-  const submit = async (username, password) => {
+  const apply = async (res) => {
+    auth.token = res.token;
+    state.user = res.user;
+    state.permissions = new Set(res.permissions);
+    await refreshStaffBadges();
+    navigate('/store/dashboard');
+  };
+
+  const submit = async () => {
     msg.textContent = '';
     try {
-      const res = await api.staffLogin(username ?? user.value, password ?? pass.value);
-      auth.token = res.token;
-      state.user = res.user;
-      state.permissions = new Set(res.permissions);
-      await refreshStaffBadges();
-      navigate('/store/dashboard');
+      const res = await api.staffLogin(user.value, pass.value);
+      await apply(res);
     } catch (err) {
       msg.textContent = err.message;
       pass.select();
@@ -73,7 +78,11 @@ export function staffLoginView(mount) {
   user.onkeydown = (e) => { if (e.key === 'Enter') pass.focus(); };
   mount.querySelector('#back').onclick = () => navigate('/');
   mount.querySelectorAll('[data-demo]').forEach((b) => {
-    b.onclick = () => submit(b.dataset.demo, b.dataset.pass);
+    b.onclick = async () => {
+      msg.textContent = '';
+      try { await apply(await api.demoLogin(b.dataset.demo)); }
+      catch (err) { msg.textContent = err.message; }
+    };
   });
   user.focus();
 }

@@ -25,3 +25,22 @@ CURRENCY = "₹"
 # Store mode now uses per-employee accounts with roles, seeded by seed.py.
 # The shared passcode that used to gate it is gone: it could not identify who
 # did something, which made an audit trail impossible.
+
+# Demo mode offers one-tap sign-in as each role so the showcase can be handed
+# to anyone. It is a deliberate authentication bypass and it is gated here.
+#
+# Set DEMO_MODE=false for anything real. That closes the bypass endpoint, and
+# because the seeded accounts then hold randomly generated passwords that are
+# printed once and never stored in plaintext, nobody can sign in until an owner
+# password is set explicitly. Locked-out-by-default is the correct posture for
+# a system leaving demo.
+DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() not in ("false", "0", "no")
+
+# Seeded account passwords. Set these to pin them; leave unset and seed.py
+# generates strong random ones instead of shipping known values in the repo.
+DEMO_PASSWORDS = {
+    "owner": os.environ.get("DEMO_OWNER_PASSWORD"),
+    "manager": os.environ.get("DEMO_MANAGER_PASSWORD"),
+    "staff": os.environ.get("DEMO_STAFF_PASSWORD"),
+    "exstaff": os.environ.get("DEMO_EXSTAFF_PASSWORD"),
+}

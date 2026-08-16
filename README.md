@@ -18,7 +18,37 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open <http://localhost:3000>. Store mode asks for a passcode — the demo one is shown on its sign-in screen (`2468` unless you set `STAFF_PASSCODE`).
+Open <http://localhost:3000>. Store mode has three demo roles — owner, manager and staff — each one tap from the sign-in screen, so nothing needs typing.
+
+## Staff accounts and roles
+
+Store mode runs on real accounts with roles (`owner`, `manager`, `staff`), salted scrypt passwords, and an active/disabled state.
+
+**Authorization is enforced in the services, not just the routes.** Hiding a button is a courtesy; refusing the operation is the control. Both layers check, and the test suite fails if either is removed.
+
+The full matrix lives in one place, `services/security.py`, and is served at `GET /api/permissions`. Broadly: staff do counter work (stock moves, accepting and completing reservations); managers add stock-takes, rejections, analytics and the audit log; owners add staff administration, settings, voids and the demo reset.
+
+**No passwords are committed.** Seeding generates a strong random one per account. You never need them for the demo — the role buttons ask the server for a session instead — but you can pin them with `DEMO_OWNER_PASSWORD`, `DEMO_MANAGER_PASSWORD`, `DEMO_STAFF_PASSWORD`.
+
+### Turning off demo mode
+
+Those one-tap buttons are an authentication bypass, gated on `DEMO_MODE`:
+
+```bash
+DEMO_MODE=false python app.py
+```
+
+With it off the endpoint returns 404 and password sign-in is the only way in. Since the seeded passwords are random and printed once at seed time, a fresh database with demo mode off has **no known credentials** — set one deliberately with `DEMO_OWNER_PASSWORD` before seeding. Locked out by default is the right posture for anything leaving demo.
+
+Every meaningful action, and every refused attempt, lands in an audit log readable by managers and owners at `/store/audit`.
+
+## Tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+196 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness and secret redaction, plus regressions pinning the stock arithmetic, reservation lifecycle and search.
 
 Demo data seeds itself on first boot: 8 products, 18 variants with SKUs and barcodes, stock at varied ages, customers, live reservations and a week of past sales. Delete `data/store.db` to start over.
 

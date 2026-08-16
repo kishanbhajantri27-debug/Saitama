@@ -64,6 +64,38 @@ def staff_login():
     )
 
 
+@api_bp.post("/session/demo")
+def demo_login():
+    """One-tap sign-in as a demo role.
+
+    This is an authentication bypass, stated plainly. It exists so the showcase
+    can be handed to someone without credentials being shared, and it is gated
+    on DEMO_MODE -- with that off, the endpoint does not exist and the only way
+    in is a real password.
+
+    It is deliberately narrow: it signs in a named seeded account, it cannot
+    reach any account created later, and it is audited distinctly from a real
+    login so the trail never claims someone typed a password.
+    """
+    if not config.DEMO_MODE:
+        return jsonify(error="not found"), 404
+
+    role = (_body().get("role") or "").strip().lower()
+    if role not in ("owner", "manager", "staff"):
+        return jsonify(error="unknown demo role"), 400
+
+    member = staff.get_by_username(role)
+    if not member or member["status"] != "active":
+        return jsonify(error="demo account unavailable"), 404
+
+    audit.record(member, "auth.demo_login", "employee", member["id"], {"role": role})
+    return jsonify(
+        token=issue_token(member["id"]),
+        user=staff.public(member),
+        permissions=permissions_for(member["role"]),
+    )
+
+
 @api_bp.post("/session/staff/logout")
 def staff_logout():
     actor = current_actor()
@@ -95,6 +127,7 @@ def get_config():
         currency=config.CURRENCY,
         reservation_minutes=config.RESERVATION_MINUTES,
         low_stock_at=config.LOW_STOCK_AT,
+        demo_mode=config.DEMO_MODE,
     )
 
 

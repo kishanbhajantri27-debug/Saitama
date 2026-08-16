@@ -93,6 +93,7 @@ export const api = {
 
   staffLogin: (username, password) =>
     call('/session/staff', { method: 'POST', body: { username, password } }),
+  demoLogin: (role) => call('/session/demo', { method: 'POST', body: { role } }),
   staffLogout: () => call('/session/staff/logout', { method: 'POST', staff: true }),
   sessionMe: () => call('/session/me', { staff: true }),
   staffList: () => call('/staff', { staff: true }),

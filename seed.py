@@ -4,9 +4,34 @@ Idempotent: safe to run on every boot. It fills an empty database and leaves a
 populated one alone, so a fresh clone opens on a store that already looks like
 a going concern rather than an empty shell.
 """
+import secrets
+
 import config
 import db
 from services import staff
+
+
+def _announce(generated):
+    """Print generated passwords once, at seed time.
+
+    The only moment these exist in plaintext. They are not written to a file
+    or returned over HTTP -- if they scroll away, reset the demo or set them
+    through the environment.
+    """
+    if not generated:
+        return
+    if config.DEMO_MODE:
+        # One-tap demo sign-in does not need them, so they are noise for the
+        # common case. Mention how to get them rather than printing them.
+        print("[store] seeded staff accounts with random passwords; "
+              "use the demo role buttons, or set DEMO_*_PASSWORD to pin them",
+              flush=True)
+        return
+    print("[store] generated staff passwords (shown once):", flush=True)
+    for username, password in generated.items():
+        print(f"[store]   {username}: {password}", flush=True)
+
+
 
 STORE = {
     "id": config.STORE_ID,
@@ -95,14 +120,15 @@ CUSTOMERS = [
     ("Demo Shopper", "", "demo@example.com"),
 ]
 
-# (name, username, password, role). Demo credentials on purpose -- they are
-# printed on the sign-in screen so the showcase can be handed to anyone. Change
-# them before this is ever exposed beyond a demo.
+# (name, username, role). No passwords here on purpose: shipping known
+# credentials in the repository means every copy of this code shares them.
+# Each account gets a strong random password at seed time unless one is pinned
+# through the environment, and the generated values are printed once.
 EMPLOYEES = [
-    ("Anita Rao", "owner", "owner123", "owner"),
-    ("Vikram Singh", "manager", "manager123", "manager"),
-    ("Sara Iqbal", "staff", "staff123", "staff"),
-    ("Former Employee", "exstaff", "disabled123", "staff"),
+    ("Anita Rao", "owner", "owner"),
+    ("Vikram Singh", "manager", "manager"),
+    ("Sara Iqbal", "staff", "staff"),
+    ("Former Employee", "exstaff", "staff"),
 ]
 
 # (customer index, sku, quantity, status)
@@ -191,7 +217,12 @@ def run(force=False):
             )
             customer_ids.append(cc.lastrowid)
 
-        for ename, username, password, role in EMPLOYEES:
+        generated = {}
+        for ename, username, role in EMPLOYEES:
+            password = config.DEMO_PASSWORDS.get(username)
+            if not password:
+                password = secrets.token_urlsafe(12)
+                generated[username] = password
             conn.execute(
                 """INSERT INTO employees (store_id, name, username, password_hash, role, status)
                    VALUES (?, ?, ?, ?, ?, ?)""",
@@ -200,6 +231,7 @@ def run(force=False):
                  # path is demonstrable without breaking a working login.
                  "disabled" if username == "exstaff" else "active"),
             )
+        _announce(generated)
 
         # Past sales, dated backwards so the week's trend has shape.
         for order_no, (sku, qty, days_ago) in enumerate(PAST_SALES, start=1):
