@@ -181,7 +181,7 @@ function sidebar(path) {
 
         <nav class="drawer-nav">
           ${[['/home', '🏠', 'Home'], ['/showcase', '🗂️', 'Showcase'], ['/search/', '🔍', 'Search']].map(link).join('')}
-          ${state.categories.map((c) => {
+          ${C.inAisleOrder(state.categories).map((c) => {
             const to = `/search/cat:${encodeURIComponent(c)}`;
             return `<button class="${path === to ? 'on' : ''}" data-to="${to}">
                       <span class="ic">${C.categoryIcon(c)}</span>${h(c)}

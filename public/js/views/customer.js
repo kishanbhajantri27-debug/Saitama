@@ -32,10 +32,15 @@ export function categoryIcon(name = '') {
   return hit ? hit[1] : '🏷️';
 }
 
+/** A stable colour per product, but kept inside the showroom's own range:
+    wheat and honey through to fresh green. Left unbounded this drifts into
+    lavender and blue, which look wrong next to food. */
 function hueFor(seed) {
-  let hue = 0;
-  for (const ch of String(seed || 'x')) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
-  return hue;
+  let n = 0;
+  for (const ch of String(seed || 'x')) n = (n * 31 + ch.charCodeAt(0)) % 360;
+  const WARM_START = 26;   // amber
+  const WARM_SPAN = 116;   // ...through olive to leaf green
+  return WARM_START + (n % WARM_SPAN);
 }
 
 const img = (p) => {
@@ -467,8 +472,7 @@ function heroBanner(products) {
       </div>
       ${picks.length ? `
       <div class="hero-shelf" aria-hidden="true">
-        ${picks.slice(0, 5).map((p) => `<div class="hero-jar"><img src="${h(p.image_url)}" alt="" loading="lazy"></div>`).join('')}
-        ${picks[5] ? `<div class="hero-jar wide"><img src="${h(picks[5].image_url)}" alt="" loading="lazy"></div>` : ''}
+        ${picks.slice(0, 6).map((p) => `<div class="hero-jar"><img src="${h(p.image_url)}" alt="" loading="lazy"></div>`).join('')}
       </div>` : ''}
     </section>`;
 }
@@ -484,11 +488,21 @@ function groupBy(rows, keyFn, fallback = 'Other') {
   return groups;
 }
 
+/** Walk the aisles in shopping order, not alphabetical order: the staples
+    this store is built around come first, and anything else keeps its place
+    behind them rather than being dropped. */
+export function inAisleOrder(categories) {
+  const rank = (name) => {
+    const i = AISLES.findIndex(([re]) => re.test(name));
+    return i === -1 ? AISLES.length : i;
+  };
+  return [...categories].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
 /** Aisle signs: a quick jump to each real category. */
 function catRow(categories, products) {
   if (!categories.length) return '';
-  const byCategory = groupBy(products, (p) => p.category, 'Other');
-  const shown = categories.slice(0, 6);
+  const shown = inAisleOrder(categories).slice(0, 6);
   return `
     <div class="cat-row">
       ${shown.map((c) => `
@@ -553,7 +567,7 @@ function catalogBody(products, categories) {
         </div>
         <a class="link" href="#/categories">View all →</a>
       </div>
-      <div class="cat-grid">${categories.map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>
+      <div class="cat-grid">${inAisleOrder(categories).map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>
     </div>` : '';
 
   // Category-matched shelves pull from the real catalogue; the rest are
@@ -1131,13 +1145,10 @@ export async function cartView(mount) {
     }
 
     mount.innerHTML = `
-      <div class="wrap" style="padding-top:22px">
-        <div class="sec-head">
-          <div>
-            <h2>Your basket</h2>
-            <div class="sub">${rows.length} item${rows.length === 1 ? '' : 's'} ready to hold for pickup</div>
-          </div>
-        </div>
+      <div class="wrap" style="padding-top:20px">
+        <!-- The app bar already says "Basket"; repeating it as a heading here
+             just pushed the list down, so this is only the count line. -->
+        <p class="cart-count">${rows.length} item${rows.length === 1 ? '' : 's'} ready to hold for pickup</p>
 
         <div class="cart-layout">
           <div class="stack">
@@ -1165,7 +1176,10 @@ export async function cartView(mount) {
           </div>
 
           <div class="cart-summary">
-            <h3>Basket total</h3>
+            <!-- "Order summary" heads the panel; the amount is the "Total"
+                 row below, so the old "Basket total" heading read as a
+                 duplicate label for the same number. -->
+            <h3>Order summary</h3>
             <div class="kv"><span class="k">Items</span><span class="v">${cart.count()}</span></div>
             <div class="kv"><span class="k">Pickup at</span><span class="v">${h(state.store?.name || '')}</span></div>
             <div class="total"><span>Total</span><span>${money(cart.total())}</span></div>
@@ -1245,8 +1259,13 @@ export async function cartView(mount) {
 /* ---------- categories ---------- */
 
 export async function categoriesView(mount) {
-  mount.innerHTML = `<div class="wrap" style="padding-top:16px">
-      <h2 style="margin-bottom:14px">Shop by category</h2>
+  mount.innerHTML = `<div class="wrap showroom" style="padding-top:22px">
+      <div class="sec-head">
+        <div>
+          <h2>Every aisle in the store</h2>
+          <div class="sub">Grains, pulses, dry fruits, dairy, ghee, spices and more</div>
+        </div>
+      </div>
       <div id="list">${skeletonGrid(6)}</div>
     </div>`;
   const list = mount.querySelector('#list');
@@ -1254,7 +1273,7 @@ export async function categoriesView(mount) {
     const [products, categories] = await Promise.all([api.products({ sort: 'name' }), api.categories()]);
     const byCategory = groupBy(products, (p) => p.category, 'Other');
     list.innerHTML = categories.length
-      ? `<div class="cat-grid">${categories.map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>`
+      ? `<div class="cat-grid">${inAisleOrder(categories).map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>`
       : empty({ icon: '🗂️', title: 'No categories yet', body: 'They appear as the store adds products.' });
     list.querySelectorAll('[data-cat]').forEach((b) => {
       b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
