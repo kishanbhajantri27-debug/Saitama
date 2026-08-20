@@ -5,10 +5,10 @@ from flask import Blueprint, jsonify, request, send_file
 import config
 import db
 import seed
-from api.auth import (current_actor, issue_token, require_permission, require_staff,
-                      revoke, revoke_all_for)
+from api.auth import (current_actor, issue_token, require_parent_token, require_permission,
+                      require_staff, revoke, revoke_all_for)
 from services import (analytics, audit, catalog, customers, inventory, notifications,
-                      ratelimit, reservations, staff, store)
+                      parent_sync, ratelimit, reservations, staff, store)
 from services.security import (NotAuthenticated, PermissionDenied, matrix,
                                permissions_for)
 
@@ -41,6 +41,11 @@ def _permission_denied(err):
 @api_bp.errorhandler(NotAuthenticated)
 def _not_authenticated(err):
     return jsonify(error=str(err)), 401
+
+
+@api_bp.errorhandler(parent_sync.CatalogPushError)
+def _catalog_push_error(err):
+    return jsonify(error=str(err)), 400
 
 
 # ---------- Session / store ----------
@@ -152,6 +157,21 @@ def get_store():
     return jsonify(store.profile())
 
 
+@api_bp.put("/store")
+@require_permission("settings.edit")
+def update_store():
+    try:
+        return jsonify(store.update(current_actor(), _body()))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+
+
+@api_bp.get("/store/types")
+def store_types():
+    """The showcase layouts the client can offer in the settings form."""
+    return jsonify(store.SHOWCASE_TYPES)
+
+
 @api_bp.get("/config")
 def get_config():
     """What the client needs to render before it knows anything else."""
@@ -183,6 +203,80 @@ def get_product(product_id):
     if not product:
         return jsonify(error="product not found"), 404
     return jsonify(product)
+
+
+@api_bp.post("/products")
+@require_permission("product.create", entity_type="product")
+def create_product():
+    body = _body()
+    try:
+        product = catalog.create_product(
+            current_actor(),
+            name=body.get("name", ""),
+            brand=body.get("brand", ""),
+            category=body.get("category", ""),
+            description=body.get("description", ""),
+            tags=body.get("tags", ""),
+            image_url=body.get("image_url", ""),
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(product), 201
+
+
+@api_bp.put("/products/<int:product_id>")
+@require_permission("product.edit", entity_type="product")
+def update_product(product_id):
+    try:
+        product = catalog.update_product(current_actor(), product_id, **_body())
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(product)
+
+
+@api_bp.delete("/products/<int:product_id>")
+@require_permission("product.delete", entity_type="product")
+def delete_product(product_id):
+    try:
+        catalog.delete_product(current_actor(), product_id)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return "", 204
+
+
+@api_bp.post("/products/<int:product_id>/variants")
+@require_permission("product.edit", entity_type="variant")
+def add_variant(product_id):
+    body = _body()
+    try:
+        variant = catalog.add_variant(
+            current_actor(), product_id,
+            sku=body.get("sku", ""), barcode=body.get("barcode", ""),
+            label=body.get("label", ""), price=body.get("price", 0),
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(variant), 201
+
+
+@api_bp.put("/variants/<int:variant_id>")
+@require_permission("product.edit", entity_type="variant")
+def update_variant(variant_id):
+    try:
+        variant = catalog.update_variant(current_actor(), variant_id, **_body())
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(variant)
+
+
+@api_bp.delete("/variants/<int:variant_id>")
+@require_permission("product.delete", entity_type="variant")
+def delete_variant(variant_id):
+    try:
+        catalog.delete_variant(current_actor(), variant_id)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return "", 204
 
 
 @api_bp.get("/categories")
@@ -559,3 +653,34 @@ def analytics_today():
 @require_permission("analytics.view")
 def analytics_overview():
     return jsonify(analytics.overview())
+
+
+# ---------- Parent platform integration ----------
+#
+# A different trust boundary from everything above: the caller is a machine
+# speaking for head office, authenticated by a shared token rather than a
+# staff session (see require_parent_token). Deliberately narrow -- catalogue
+# in, stock out, nothing else. No customer, reservation, staff or payment
+# data is reachable here, the same reasoning that keeps the public search
+# surface on the parent's own platform blind to a shop's private numbers.
+
+
+@api_bp.post("/parent/catalog")
+@require_parent_token
+def parent_push_catalog():
+    body = _body()
+    store_id = (body.get("store_id") or "").strip()
+    if store_id and store_id != config.STORE_ID:
+        return jsonify(error=f"this installation is store {config.STORE_ID!r}"), 400
+
+    counts = parent_sync.upsert_catalog(config.STORE_ID, body.get("products") or [])
+    audit.record(None, "parent.catalog_push", "store", config.STORE_ID, counts)
+    return jsonify(ok=True, **counts)
+
+
+@api_bp.get("/parent/inventory")
+@require_parent_token
+def parent_pull_inventory():
+    branch_id = request.args.get("branch_id") or None
+    rows = parent_sync.inventory_for_parent(branch_id)
+    return jsonify(store_id=config.STORE_ID, branch_id=branch_id or config.BRANCH_ID, items=rows)

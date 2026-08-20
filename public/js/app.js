@@ -1,4 +1,5 @@
 import { api, auth } from './api.js';
+import { cart } from './cart.js';
 import {
   bootstrap, exitMode, navigate, refreshCustomerBadges, refreshStaffBadges,
   may, resolve, restoreSession, route, setMode, startRouter, state,
@@ -9,13 +10,69 @@ import * as S from './views/store.js';
 
 const app = document.getElementById('app');
 
+/* ---------- installable app ---------- */
+
+// Chrome/Android holds the install prompt back until asked; this captures it
+// so the landing screen can offer "Install app" instead of it appearing
+// unprompted in the browser's own UI (or never, on browsers that skip it).
+let installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  syncInstallButton();
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  syncInstallButton();
+});
+
+function syncInstallButton() {
+  const btn = document.getElementById('install');
+  if (!btn) return;
+  btn.style.display = installPrompt ? '' : 'none';
+  btn.onclick = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    // A prompt is single-use regardless of the answer.
+    installPrompt = null;
+    syncInstallButton();
+  };
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Offline shell caching is a nicety, not a requirement -- a failed
+      // registration (unsupported browser, blocked storage) should never
+      // stop the showcase itself from working.
+    });
+  });
+}
+
 /* ---------- chrome ---------- */
 
+// Five slots with a raised scanner in the middle, matching the storefront
+// design. The centre button is not a route -- it opens the code lookup
+// sheet over whatever screen you are on.
 const CUSTOMER_TABS = [
   ['/home', '🏠', 'Home'],
-  ['/search/', '🔍', 'Search'],
-  ['/wishlist', '❤️', 'Wishlist'],
+  ['/categories', '🗂️', 'Aisles'],
+  ['scan', '❇️', 'Scan'],
+  ['/cart', '🧺', 'Basket'],
   ['/reservations', '🎟️', 'Orders'],
+];
+
+const SIDEBAR_LINKS = [
+  ['/home', '🏠', 'Home'],
+  ['/showcase', '🗂️', 'Showcase'],
+  ['/search/', '🔍', 'Search'],
+  ['/reservations', '🎟️', 'My orders'],
+  ['/wishlist', '❤️', 'Wishlist'],
+  ['/recently-viewed', '🕓', 'Recently viewed'],
+  ['/store-info', '🏪', 'Store info'],
 ];
 
 const STORE_TABS = [
@@ -33,11 +90,15 @@ function shell({ title, sub, back = false, mode }) {
   return `
     <header class="appbar">
       <div class="wrap">
+        ${mode === 'customer' && !back
+          ? '<button class="iconbtn" id="menu" aria-label="Open menu">☰</button>'
+          : ''}
         ${back ? '<button class="iconbtn" id="back" aria-label="Back">←</button>' : ''}
-        <div style="flex:1;min-width:0">
+        <div class="appbar-title" style="flex:1;min-width:0">
           <h1>${h(title)}</h1>
           ${sub ? `<div class="sub">${h(sub)}</div>` : ''}
         </div>
+        ${mode === 'customer' ? headerSearchAndActions() : ''}
         <span class="modepill"><span class="mode-full">${
           mode === 'store' ? h(state.user?.role || 'Store') : 'Customer'} · </span>Demo</span>
         <button class="iconbtn" id="theme" aria-label="Toggle theme">◐</button>
@@ -50,14 +111,106 @@ function shell({ title, sub, back = false, mode }) {
     <main class="screen" id="screen"></main>
     <nav class="tabbar">
       ${tabs.map(([to, icon, label]) => {
+        if (to === 'scan') {
+          return `<button class="tab-scan" id="tabscan" aria-label="Scan a code">
+                    <span class="ic">${icon}</span>${label}
+                  </button>`;
+        }
         const on = path === to || (to !== '/home' && path.startsWith(to.replace(/\/$/, '')));
-        const badge = to === '/store/reservations' && state.pendingReservations
-          ? `<span class="dot">${state.pendingReservations}</span>` : '';
+        const count = to === '/store/reservations' ? state.pendingReservations
+          : to === '/cart' ? cart.count()
+          : 0;
+        const badge = count ? `<span class="dot">${count}</span>` : '';
         return `<button class="${on ? 'on' : ''}" data-to="${to}">
                   <span class="ic">${icon}</span>${label}${badge}
                 </button>`;
       }).join('')}
-    </nav>`;
+    </nav>
+    ${mode === 'customer' ? sidebar(path) : ''}`;
+}
+
+/** Search box + wishlist/orders/account -- only ever shown at desktop widths
+    (see .header-search / .header-actions in app.css); the phone layout keeps
+    using the hamburger drawer and bottom tabbar instead. */
+function headerSearchAndActions() {
+  return `
+    <div class="header-search desktop-only">
+      <span class="ic">🔍</span>
+      <input id="hsearch" type="search" placeholder="Search ${h(state.store?.name ? 'at ' + state.store.name : 'products')}…" autocomplete="off">
+    </div>
+    <div class="header-actions desktop-only">
+      <button class="header-action" data-to="/wishlist" aria-label="Wishlist">
+        <span class="ic">🤍</span>Wishlist
+        ${state.wishlistIds.size ? `<span class="count-badge">${state.wishlistIds.size}</span>` : ''}
+      </button>
+      <button class="header-action" data-to="/cart" aria-label="Your basket">
+        <span class="ic">🧺</span>Basket
+        ${cart.count() ? `<span class="count-badge">${cart.count()}</span>` : ''}
+      </button>
+      <button class="header-action" data-to="/reservations" aria-label="Your orders">
+        <span class="ic">🎟️</span>Orders
+        ${state.openReservations ? `<span class="count-badge">${state.openReservations}</span>` : ''}
+      </button>
+      <button class="header-account" data-to="/account">
+        <span class="avatar">👤</span>
+        <span>
+          <b>Hi, ${h(state.me?.name || 'there')}</b>
+          <small>Guest · no account needed</small>
+        </span>
+      </button>
+    </div>`;
+}
+
+/** Navigation order mirrors the storefront design: browse (home + the real
+    categories) first, then the personal shelves, then the help card. */
+function sidebar(path) {
+  const isOn = (to) => path === to || (to !== '/home' && path.startsWith(to.replace(/\/$/, '')));
+  const link = ([to, icon, label]) =>
+    `<button class="${isOn(to) ? 'on' : ''}" data-to="${to}">
+       <span class="ic">${icon}</span>${label}
+     </button>`;
+
+  return `
+    <div class="drawer-bg" id="drawerBg">
+      <aside class="drawer" role="dialog" aria-label="Menu">
+        <div class="drawer-head">
+          <span class="drawer-logo">${TYPE_LOGO[state.store?.type] || TYPE_LOGO.general}</span>
+          <span class="drawer-name">${h(state.store?.name || 'Store')}</span>
+          <button class="iconbtn" id="drawerClose" aria-label="Close menu">✕</button>
+        </div>
+
+        <nav class="drawer-nav">
+          ${[['/home', '🏠', 'Home'], ['/showcase', '🗂️', 'Showcase'], ['/search/', '🔍', 'Search']].map(link).join('')}
+          ${state.categories.map((c) => {
+            const to = `/search/cat:${encodeURIComponent(c)}`;
+            return `<button class="${path === to ? 'on' : ''}" data-to="${to}">
+                      <span class="ic">${C.categoryIcon(c)}</span>${h(c)}
+                    </button>`;
+          }).join('')}
+        </nav>
+
+        <div class="drawer-divider"></div>
+        <nav class="drawer-nav">
+          ${[
+            ['/cart', '🧺', 'My basket'],
+            ['/reservations', '🎟️', 'My orders'],
+            ['/wishlist', '❤️', 'Wishlist'],
+            ['/recently-viewed', '🕓', 'Recently viewed'],
+            ['/store-info', '🏪', 'Store info'],
+          ].map(link).join('')}
+        </nav>
+
+        <div class="drawer-foot">
+          <div class="help-card">
+            <b>Need help?</b>
+            <small>${h(state.store?.hours_label || 'We are here during store hours')}</small>
+            ${state.store?.phone
+              ? `<a class="btn ghost sm block" href="tel:${h(state.store.phone.replace(/\s/g, ''))}">📞 Contact us</a>`
+              : ''}
+          </div>
+        </div>
+      </aside>
+    </div>`;
 }
 
 /** Renders chrome once, then hands the inner element to the view. */
@@ -73,11 +226,38 @@ function frame(opts, render) {
   if (back) back.onclick = () => history.back();
 
   app.querySelectorAll('[data-to]').forEach((b) => {
-    b.onclick = () => navigate(b.dataset.to);
+    b.onclick = () => { closeDrawer(); navigate(b.dataset.to); };
   });
+
+  const hsearch = app.querySelector('#hsearch');
+  if (hsearch) hsearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && hsearch.value.trim()) navigate(`/search/${encodeURIComponent(hsearch.value.trim())}`);
+  });
+
+  const tabscan = app.querySelector('#tabscan');
+  if (tabscan) tabscan.onclick = () => C.openLookupSheet();
+
+  const menu = app.querySelector('#menu');
+  if (menu) menu.onclick = () => openDrawer();
+  const drawerClose = app.querySelector('#drawerClose');
+  if (drawerClose) drawerClose.onclick = () => closeDrawer();
+  const drawerBg = app.querySelector('#drawerBg');
+  if (drawerBg) drawerBg.onclick = (e) => { if (e.target === drawerBg) closeDrawer(); };
 
   render(screen);
 }
+
+function openDrawer() {
+  const bg = app.querySelector('#drawerBg');
+  if (bg) bg.classList.add('open');
+}
+
+function closeDrawer() {
+  const bg = app.querySelector('#drawerBg');
+  if (bg) bg.classList.remove('open');
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
 /** Put the showcase back to its opening state so it can be given again. */
 async function resetDemo() {
@@ -102,10 +282,13 @@ async function resetDemo() {
 
 /* ---------- landing ---------- */
 
+const TYPE_LOGO = { grocery: '🛒', mall: '🏬', general: '🛍️' };
+
 function landing() {
+  const logo = TYPE_LOGO[state.store?.type] || TYPE_LOGO.general;
   app.innerHTML = `
     <div class="wrap landing">
-      <div class="logo">🛍️</div>
+      <div class="logo">${logo}</div>
       <h1>${h(state.store?.name || 'Store')}</h1>
       <p class="lede">${h(state.store?.tagline || '')} — a showcase of the store experience, from finding an item to collecting it.</p>
 
@@ -128,6 +311,7 @@ function landing() {
         </button>
       </div>
 
+      <button class="btn ghost block" id="install" style="margin-top:14px;display:none">📲 Install app</button>
       <p class="demonote">Demo data only. No account, no payment, no real customer details.</p>
     </div>`;
 
@@ -139,6 +323,7 @@ function landing() {
     setMode('store');
     navigate(auth.isStaff ? '/store/dashboard' : '/store/login');
   };
+  syncInstallButton();
 }
 
 /* ---------- routes ---------- */
@@ -150,6 +335,10 @@ route('/', () => landing());
 route('/home', () => frame(
   { title: customerTitle(), sub: state.store?.city, mode: 'customer' },
   (s) => C.homeView(s)));
+
+route('/showcase', () => frame(
+  { title: 'Showcase', sub: 'Everything in the store', mode: 'customer' },
+  (s) => C.showcaseView(s)));
 
 route(/^\/search\/?(.*)$/, (_p, [term]) => {
   const q = decodeURIComponent(term || '');
@@ -172,6 +361,22 @@ route('/wishlist', () => frame(
   { title: 'Wishlist', mode: 'customer' },
   (s) => C.wishlistView(s)));
 
+route('/recently-viewed', () => frame(
+  { title: 'Recently viewed', mode: 'customer' },
+  (s) => C.recentlyViewedView(s)));
+
+route('/categories', () => frame(
+  { title: 'Categories', mode: 'customer' },
+  (s) => C.categoriesView(s)));
+
+route('/cart', () => frame(
+  { title: 'Basket', mode: 'customer' },
+  (s) => C.cartView(s)));
+
+route('/account', () => frame(
+  { title: 'Account', mode: 'customer' },
+  (s) => C.accountView(s)));
+
 route('/find', () => frame(
   { title: 'Find everything', back: true, mode: 'customer' },
   (s) => C.findView(s)));
@@ -192,6 +397,7 @@ route('/store/scan', () => storeFrame('Scanner', (s) => S.scanView(s)));
 route('/store/analytics', () => storeFrame('Sales', (s) => S.analyticsView(s)));
 route('/store/history', () => storeFrame('History', (s) => S.historyView(s)));
 route('/store/audit', () => storeFrame('Audit log', (s) => S.auditView(s)));
+route('/store/settings', () => storeFrame('Settings', (s) => S.settingsView(s)));
 
 /* ---------- boot ---------- */
 
@@ -221,9 +427,30 @@ route('/store/audit', () => storeFrame('Audit log', (s) => S.auditView(s)));
 
   startRouter();
 
+  // One clock for the whole app: any "reserved for you" countdown that any
+  // screen renders is ticked from here.
+  C.startClocks();
+
   // Keep the customer's badge counts honest as they move around.
   window.addEventListener('hashchange', () => {
     if (state.mode === 'customer') refreshCustomerBadges();
     else refreshStaffBadges();
+  });
+
+  // Adding to the basket from a shelf must move the counter in the header
+  // and the tab bar without reloading the screen underneath it.
+  window.addEventListener('cartchange', () => {
+    const n = cart.count();
+    document.querySelectorAll('[data-to="/cart"]').forEach((node) => {
+      const badge = node.querySelector('.count-badge, .dot');
+      if (badge) {
+        if (n) badge.textContent = n;
+        else badge.remove();
+      } else if (n) {
+        const isTab = node.closest('.tabbar');
+        node.insertAdjacentHTML('beforeend',
+          `<span class="${isTab ? 'dot' : 'count-badge'}">${n}</span>`);
+      }
+    });
   });
 })();

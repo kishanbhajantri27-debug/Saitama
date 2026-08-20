@@ -184,9 +184,11 @@ export function timeline(rows, { emptyText = 'No activity yet.' } = {}) {
 /* ---------- theme ---------- */
 const THEME_KEY = 'theme';
 export function initTheme() {
+  // The showroom opens in daylight. A grocery floor is meant to look bright
+  // and fresh, so the OS's dark preference does not decide this one -- only
+  // an explicit choice from the toggle does.
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved) document.documentElement.dataset.theme = saved;
-  else if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
 }
 export function toggleTheme() {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

@@ -17,7 +17,7 @@ class TestStockArithmetic:
 
     def test_the_hero_product_matches_the_demo_script(self):
         """4 available, the number the walkthrough is written around."""
-        s = catalog.find_by_code("NIK-AM-092")["stock"]
+        s = catalog.find_by_code("AML-GHEE-500")["stock"]
         assert s["on_hand"] == 5
         assert s["reserved"] == 1
         assert s["available"] == 4
@@ -79,7 +79,7 @@ class TestReservationLifecycle:
             reservations.create(a_variant["id"], a_customer["id"], 999)
 
     def test_cannot_reserve_out_of_stock(self, a_customer):
-        out = catalog.find_by_code("SAM-25W")
+        out = catalog.find_by_code("FT-SUN-5L")
         assert out["stock"]["available"] == 0
         with pytest.raises(reservations.ReservationError, match="out of stock"):
             reservations.create(out["id"], a_customer["id"], 1)
@@ -119,36 +119,36 @@ class TestReservationLifecycle:
 
 class TestSearch:
     @pytest.mark.parametrize("query,expected", [
-        ("Nike shoes", "Nike Air Max"),
-        ("Samsung charger", "Samsung 25W Charger"),
-        ("Black shirt", "Cotton T-Shirt"),
-        ("Notebook", "Ruled Notebook"),
-        ("Bluetooth headphones", "Bluetooth Headphones"),
-        ("black jeans", "Levi's 511 Jeans"),
+        ("basmati rice", "India Gate Basmati Rice"),
+        ("cow ghee", "Desi Cow Ghee"),
+        ("california almonds", "California Almonds"),
+        ("toor dal", "Toor Dal (Split Pigeon Pea)"),
+        ("turmeric powder", "Turmeric Powder (Haldi)"),
+        ("assam tea", "Assam Tea Leaves"),
     ])
     def test_sample_queries_still_work(self, query, expected):
         names = [p["name"] for p in catalog.list_products(search=query)]
         assert expected in names, f"{query!r} should find {expected}"
 
     def test_search_by_sku(self):
-        assert catalog.list_products(search="NIK-AM-092")[0]["name"] == "Nike Air Max"
+        assert catalog.list_products(search="AML-GHEE-500")[0]["name"] == "Desi Cow Ghee"
 
     def test_search_by_barcode(self):
-        assert catalog.list_products(search="8901234500025")[0]["name"] == "Nike Air Max"
+        assert catalog.list_products(search="8901234500396")[0]["name"] == "Desi Cow Ghee"
 
     def test_lookup_by_code(self):
-        assert catalog.find_by_code("8901234500025")["sku"] == "NIK-AM-092"
-        assert catalog.find_by_code("nik-am-092") is not None  # case-insensitive
+        assert catalog.find_by_code("8901234500396")["sku"] == "AML-GHEE-500"
+        assert catalog.find_by_code("aml-ghee-500") is not None  # case-insensitive
         assert catalog.find_by_code("nonsense") is None
 
     def test_filters(self):
-        for p in catalog.list_products(category="Footwear"):
-            assert p["category"] == "Footwear"
+        for p in catalog.list_products(category="Grains"):
+            assert p["category"] == "Grains"
         for p in catalog.list_products(status="out"):
             assert p["available"] == 0
 
     def test_check_many_finds_everything(self):
-        result = catalog.check_many(["Nike shoes", "Black jeans", "Backpack"])
+        result = catalog.check_many(["basmati rice", "toor dal", "cow ghee"])
         assert result["all_available"] is True
 
 
@@ -185,7 +185,7 @@ class TestSeedAndReset:
         db.reset()
         import seed
         seed.run(force=True)
-        assert catalog.find_by_code("NIK-AM-092")["stock"]["on_hand"] == 5
+        assert catalog.find_by_code("AML-GHEE-500")["stock"]["on_hand"] == 5
 
     def test_seed_is_idempotent(self):
         import seed

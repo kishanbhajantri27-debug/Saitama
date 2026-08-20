@@ -15,6 +15,7 @@ from functools import wraps
 
 from flask import g, jsonify, request
 
+import config
 from services import audit, staff
 from services.security import NotAuthenticated, PermissionDenied, require
 
@@ -117,6 +118,32 @@ def require_staff(view):
     def wrapped(*args, **kwargs):
         if not current_actor():
             return jsonify(error="store mode sign-in required"), 401
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def require_parent_token(view):
+    """Gate a route on the parent platform's shared secret.
+
+    Deliberately not a staff session: the parent is a machine speaking for
+    head office, not an employee, and mixing the two credential schemes would
+    let a parent token be used to browse store-mode screens or a stolen staff
+    token be used to rewrite the catalogue.
+
+    An unconfigured PARENT_TOKEN answers 404, not 401 -- the same posture
+    DEMO_MODE takes when it is off. A 401 confirms the endpoint exists and is
+    merely locked; on an installation that never opted into this integration,
+    it should look like it is not there at all.
+    """
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not config.PARENT_TOKEN:
+            return jsonify(error="not found"), 404
+        header = request.headers.get("X-Parent-Token", "")
+        if not header or not secrets.compare_digest(header, config.PARENT_TOKEN):
+            audit.record(None, "parent.auth_failed", "parent", "", outcome="denied")
+            return jsonify(error="invalid parent token"), 401
         return view(*args, **kwargs)
 
     return wrapped

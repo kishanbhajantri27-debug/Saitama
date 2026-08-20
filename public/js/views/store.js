@@ -137,6 +137,7 @@ export async function dashboardView(mount) {
           ${may('analytics.view') ? '<button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>' : ''}
           ${may('inventory.history.view') ? '<button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>' : ''}
           ${may('audit.view') ? '<button class="quick" data-go="/store/audit"><span class="ic">🛡️</span>Audit</button>' : ''}
+          ${may('settings.view') ? '<button class="quick" data-go="/store/settings"><span class="ic">⚙️</span>Settings</button>' : ''}
         </div>
       </div>
 
@@ -291,7 +292,10 @@ export async function inventoryView(mount) {
     <div class="wrap" style="padding-top:16px">
       <div class="row between" style="margin-bottom:12px">
         <h2>Inventory</h2>
-        <button class="btn sm soft" id="scan">📷 Scan</button>
+        <div class="row" style="gap:8px">
+          ${may('product.create') ? '<button class="btn sm" id="add">+ Add</button>' : ''}
+          <button class="btn sm soft" id="scan">📷 Scan</button>
+        </div>
       </div>
       <div class="searchbox"><span class="ic">🔍</span><input id="q" type="search" placeholder="Search name, SKU or barcode"></div>
       <div class="chips" style="margin-top:10px" id="f"></div>
@@ -308,6 +312,8 @@ export async function inventoryView(mount) {
     </div>`;
 
   mount.querySelector('#scan').onclick = () => navigate('/store/scan');
+  const addBtn = mount.querySelector('#add');
+  if (addBtn) addBtn.onclick = () => openProductSheet(null, load);
   const list = mount.querySelector('#list');
 
   const drawFilters = () => {
@@ -342,7 +348,10 @@ export async function inventoryView(mount) {
                 <td style="font-family:ui-monospace,monospace;font-size:.78rem">${h(r.sku)}</td>
                 <td><strong>${r.on_hand}</strong>${r.reserved ? ` <span style="color:var(--muted);font-size:.76rem">(${r.reserved} held)</span>` : ''}</td>
                 <td>${statusLine(r, { showUnits: false })}</td>
-                <td><button class="btn sm ghost" data-adj="${r.variant_id}">Update</button></td>
+                <td style="white-space:nowrap">
+                  <button class="btn sm ghost" data-adj="${r.variant_id}">Update</button>
+                  ${may('product.edit') ? `<button class="btn sm ghost" data-edit="${r.variant_id}">Edit</button>` : ''}
+                </td>
               </tr>`).join('')}</tbody>
           </table>
         </div>`;
@@ -350,6 +359,12 @@ export async function inventoryView(mount) {
         b.onclick = () => {
           const row = rows.find((r) => r.variant_id === Number(b.dataset.adj));
           openStockSheet(row, load);
+        };
+      });
+      list.querySelectorAll('[data-edit]').forEach((b) => {
+        b.onclick = () => {
+          const row = rows.find((r) => r.variant_id === Number(b.dataset.edit));
+          openProductSheet(row, load);
         };
       });
     } catch (err) {
@@ -415,6 +430,185 @@ export function openStockSheet(row, onDone) {
   });
 }
 
+/** Add a product (row omitted) or edit one (row is an inventory row, which
+ * already carries both its product and its one variant). The two are saved
+ * together -- this app has no screen that edits them apart. */
+// Kept modest on purpose: this is a demo-quality app with no file storage or
+// upload pipeline anywhere in it, so a photo is stored the same way an
+// image_url always has been -- as a string in that column. A data: URL is
+// just a string that happens to decode to a picture, which means "add a
+// photo" needed nothing new on the server at all. The cap exists because
+// nothing else in the app bounds how large that string can get.
+const MAX_PHOTO_BYTES = 1.5 * 1024 * 1024;
+
+function readPhoto(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('That is not an image file.'));
+    if (file.size > MAX_PHOTO_BYTES) return reject(new Error('Photos must be under 1.5 MB.'));
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export function openProductSheet(row, onDone) {
+  const editing = Boolean(row);
+  // null = leave the photo as it is; '' = explicitly cleared; a data: URL =
+  // a new photo was chosen. Distinct from the other fields, which are always
+  // sent, because re-sending the same image on every save just to leave it
+  // unchanged would make an ordinary rename several megabytes of traffic.
+  let photoDataUrl = null;
+
+  sheet(`
+    <h3>${editing ? h(row.product_name) : 'Add a product'}</h3>
+    <div class="row" style="gap:12px;align-items:center;margin-bottom:10px">
+      <div id="photoPreview" style="width:64px;height:64px;border-radius:10px;overflow:hidden;background:var(--surface-2);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:1.4rem">
+        ${editing && row.image_url ? `<img src="${h(row.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '📦'}
+      </div>
+      <div style="flex:1">
+        <label class="btn sm ghost" style="cursor:pointer;display:inline-block">
+          📷 ${editing && row.image_url ? 'Change photo' : 'Add photo'}
+          <input type="file" id="photo" accept="image/*" style="display:none">
+        </label>
+        ${editing && row.image_url ? '<button class="btn sm ghost" id="removePhoto" style="margin-left:6px">Remove</button>' : ''}
+        <div id="photoErr" style="color:var(--danger);font-size:.78rem;margin-top:4px"></div>
+      </div>
+    </div>
+    <label class="field">
+      <span class="lbl">Name</span>
+      <input class="input" id="name" value="${editing ? h(row.product_name) : ''}" placeholder="e.g. Rice 5kg">
+    </label>
+    <div class="row" style="gap:8px">
+      <label class="field" style="flex:1">
+        <span class="lbl">Brand</span>
+        <input class="input" id="brand" value="${editing ? h(row.brand || '') : ''}">
+      </label>
+      <label class="field" style="flex:1">
+        <span class="lbl">Category</span>
+        <input class="input" id="category" value="${editing ? h(row.category || '') : ''}">
+      </label>
+    </div>
+    <div class="row" style="gap:8px">
+      <label class="field" style="flex:1">
+        <span class="lbl">SKU</span>
+        <input class="input" id="sku" value="${editing ? h(row.sku) : ''}" placeholder="unique code">
+      </label>
+      <label class="field" style="flex:1">
+        <span class="lbl">Price</span>
+        <input class="input" id="price" type="number" min="0" step="0.01" value="${editing ? row.price : ''}">
+      </label>
+    </div>
+    ${!editing ? `
+    <label class="field">
+      <span class="lbl">Starting stock (optional)</span>
+      <input class="input" id="stock" type="number" min="0" step="1" value="0">
+    </label>` : ''}
+    <label class="field">
+      <span class="lbl">Variant label (optional)</span>
+      <input class="input" id="label" value="${editing ? h(row.label || '') : ''}" placeholder="e.g. Black - Size 9">
+    </label>
+    <label class="field">
+      <span class="lbl">Barcode (optional)</span>
+      <input class="input" id="barcode" value="${editing ? h(row.barcode || '') : ''}">
+    </label>
+    <div id="err" style="color:var(--danger);font-size:.82rem;margin:4px 0 10px"></div>
+    <button class="btn lg block" id="save">${editing ? 'Save changes' : 'Add product'}</button>
+    ${editing && may('product.delete')
+      ? '<button class="btn ghost block danger" id="del" style="margin-top:8px">Delete this variant</button>'
+      : ''}
+  `, {
+    onMount(panel, close) {
+      const err = panel.querySelector('#err');
+      const field = (id) => panel.querySelector('#' + id).value.trim();
+      const preview = panel.querySelector('#photoPreview');
+      const photoErr = panel.querySelector('#photoErr');
+
+      panel.querySelector('#photo').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        photoErr.textContent = '';
+        try {
+          photoDataUrl = await readPhoto(file);
+          preview.innerHTML = `<img src="${photoDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover">`;
+        } catch (ex) {
+          photoErr.textContent = ex.message;
+          e.target.value = '';
+        }
+      };
+
+      const removeBtn = panel.querySelector('#removePhoto');
+      if (removeBtn) {
+        removeBtn.onclick = () => {
+          photoDataUrl = '';
+          preview.innerHTML = '📦';
+          photoErr.textContent = '';
+        };
+      }
+
+      panel.querySelector('#save').onclick = async (e) => {
+        err.textContent = '';
+        const name = field('name');
+        const sku = field('sku');
+        if (!name) { err.textContent = 'A product needs a name.'; return; }
+        if (!sku) { err.textContent = 'A variant needs a SKU.'; return; }
+        e.currentTarget.disabled = true;
+        try {
+          const productFields = { name, brand: field('brand'), category: field('category') };
+          if (photoDataUrl !== null) productFields.image_url = photoDataUrl;
+          const variantFields = {
+            sku, label: field('label'), barcode: field('barcode'),
+            price: Number(panel.querySelector('#price').value || 0),
+          };
+          if (editing) {
+            await api.updateProduct(row.product_id, productFields);
+            await api.updateVariant(row.variant_id, variantFields);
+          } else {
+            const product = await api.createProduct(productFields);
+            const variant = await api.addVariant(product.id, variantFields);
+            // A fresh variant has no inventory row at all until stock moves
+            // for the first time -- going through moveStock rather than
+            // writing a starting count directly means this arrives on the
+            // shelf exactly the way any other delivery does: as a recorded
+            // movement, not a number that appeared from nowhere.
+            const startingStock = Number(panel.querySelector('#stock')?.value || 0);
+            if (startingStock > 0) {
+              await api.moveStock(variant.id, 'add', startingStock, 'Starting stock');
+            }
+          }
+          close();
+          toast(editing ? 'Product updated' : 'Product added', 'ok');
+          onDone && onDone();
+        } catch (ex) {
+          e.currentTarget.disabled = false;
+          err.textContent = ex.message;
+        }
+      };
+
+      const del = panel.querySelector('#del');
+      if (del) {
+        // Closed first, then confirmed: two full-screen sheets stacked on
+        // top of each other has never been exercised anywhere else in this
+        // app, so this does not become the first place it is tried.
+        del.onclick = async () => {
+          close();
+          const ok = await confirmSheet({
+            title: 'Delete this variant?',
+            body: 'It comes off the showcase and the till immediately. Stock history stays in the record.',
+            confirmLabel: 'Delete', danger: true,
+          });
+          if (!ok) return;
+          try {
+            await api.deleteVariant(row.variant_id);
+            toast('Variant deleted', 'ok');
+            onDone && onDone();
+          } catch (ex) { toast(ex.message, 'err'); }
+        };
+      }
+    },
+  });
+}
+
 /* ---------- scanner ---------- */
 
 export async function scanView(mount) {
@@ -436,12 +630,12 @@ export async function scanView(mount) {
       <div class="card pad" style="margin-top:14px">
         <label class="field">
           <span class="lbl">Barcode or SKU</span>
-          <input class="input" id="code" placeholder="e.g. NIK-AM-092 or 8901234500025" autocomplete="off">
+          <input class="input" id="code" placeholder="e.g. AML-GHEE-500 or 8901234500396" autocomplete="off">
         </label>
         <button class="btn block" id="go" style="margin-top:10px">Look up</button>
         <div class="chips" style="margin-top:10px">
-          <button class="chip" data-demo="NIK-AM-092">Demo: Nike Air Max</button>
-          <button class="chip" data-demo="8901234500070">Demo: Samsung charger</button>
+          <button class="chip" data-demo="AML-GHEE-500">Demo: Desi Cow Ghee</button>
+          <button class="chip" data-demo="8901234500424">Demo: Sunflower oil</button>
           <button class="chip" data-demo="RSV">Demo: reservation code</button>
         </div>
       </div>
@@ -755,5 +949,136 @@ export async function analyticsView(mount) {
   } catch (err) {
     if (err.status === 401) return navigate('/store/login', { replace: true });
     body.innerHTML = errorBox(err.message);
+  }
+}
+
+/* ---------- settings ---------- */
+
+// Labels for the store types the backend knows about (services/store.py's
+// SHOWCASE_TYPES). A type the client has never heard of still shows, just
+// under its raw name, so a newer server never breaks an older client here.
+const TYPE_INFO = {
+  general: { icon: '🛍️', label: 'General store', blurb: 'A flat product grid — the default showcase.' },
+  grocery: { icon: '🛒', label: 'Grocery', blurb: 'Products grouped into aisles by category.' },
+  mall: { icon: '🏬', label: 'Mall', blurb: 'Products grouped into wings by brand/shop.' },
+};
+
+export async function settingsView(mount) {
+  if (!guard()) return;
+  if (!may('settings.view')) {
+    mount.innerHTML = `<div class="wrap" style="padding-top:16px">${
+      errorBox('You do not have access to store settings.')
+    }</div>`;
+    return;
+  }
+
+  mount.innerHTML = `<div class="wrap" style="padding-top:16px"><div id="body">${skeletonLines(4)}</div></div>`;
+  const body = mount.querySelector('#body');
+  const editable = may('settings.edit');
+  const s = state.store;
+  const types = Object.keys(TYPE_INFO).includes(s.type) ? Object.keys(TYPE_INFO) : [...Object.keys(TYPE_INFO), s.type];
+
+  body.innerHTML = `
+    <h2 style="margin-bottom:4px">Store settings</h2>
+    <p style="color:var(--muted);font-size:.86rem;margin-bottom:18px">
+      ${editable ? 'Changes apply to the customer showcase immediately.' : 'Read-only — ask an owner to make changes.'}
+    </p>
+
+    <div class="sec-head"><h2>Shop type</h2></div>
+    <p style="color:var(--muted);font-size:.82rem;margin-bottom:10px">Sets the whole layout customers browse — pick the one that matches this shop.</p>
+    <div class="stack" id="types" style="gap:8px;margin-bottom:22px"></div>
+
+    <div class="sec-head"><h2>Profile</h2></div>
+    <div class="card pad" style="margin-bottom:18px">
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Shop name</span>
+        <input class="input" id="f_name" value="${h(s.name)}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Tagline</span>
+        <input class="input" id="f_tagline" value="${h(s.tagline || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <div class="row" style="gap:10px;margin-bottom:12px">
+        <label class="field" style="flex:1">
+          <span class="lbl">Opens</span>
+          <input class="input" id="f_opens" type="time" value="${h(s.opens_at || '')}" ${editable ? '' : 'disabled'}>
+        </label>
+        <label class="field" style="flex:1">
+          <span class="lbl">Closes</span>
+          <input class="input" id="f_closes" type="time" value="${h(s.closes_at || '')}" ${editable ? '' : 'disabled'}>
+        </label>
+      </div>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Phone</span>
+        <input class="input" id="f_phone" value="${h(s.phone || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Email</span>
+        <input class="input" id="f_email" value="${h(s.email || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Address</span>
+        <input class="input" id="f_address" value="${h(s.address || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field">
+        <span class="lbl">Accent colour</span>
+        <input class="input" id="f_color" type="color" value="${h(s.accent_color || '#3d5afe')}" style="height:42px;padding:4px" ${editable ? '' : 'disabled'}>
+      </label>
+    </div>
+
+    ${editable ? '<button class="btn lg block" id="save">Save changes</button>' : ''}`;
+
+  let selectedType = s.type;
+  const drawTypes = () => {
+    body.querySelector('#types').innerHTML = types.map((t) => {
+      const info = TYPE_INFO[t] || { icon: '❔', label: t, blurb: '' };
+      return `
+        <button class="modecard ${selectedType === t ? 'on' : ''}" data-type="${h(t)}" ${editable ? '' : 'disabled'}
+                style="${selectedType === t ? 'border-color:var(--accent);background:var(--info-bg)' : ''}">
+          <span class="ic">${info.icon}</span>
+          <span style="flex:1">
+            <span class="t">${h(info.label)}</span>
+            <span class="d">${h(info.blurb)}</span>
+          </span>
+          ${selectedType === t ? '<span style="color:var(--accent);font-weight:800">✓</span>' : ''}
+        </button>`;
+    }).join('');
+    if (editable) {
+      body.querySelectorAll('[data-type]').forEach((b) => {
+        b.onclick = () => { selectedType = b.dataset.type; drawTypes(); };
+      });
+    }
+  };
+  drawTypes();
+
+  const saveBtn = body.querySelector('#save');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const updated = await api.updateStore({
+          type: selectedType,
+          name: body.querySelector('#f_name').value,
+          tagline: body.querySelector('#f_tagline').value,
+          opens_at: body.querySelector('#f_opens').value,
+          closes_at: body.querySelector('#f_closes').value,
+          phone: body.querySelector('#f_phone').value,
+          email: body.querySelector('#f_email').value,
+          address: body.querySelector('#f_address').value,
+          accent_color: body.querySelector('#f_color').value,
+        });
+        state.store = updated;
+        if (updated.accent_color) {
+          document.documentElement.style.setProperty('--accent', updated.accent_color);
+        }
+        toast('Settings saved', 'ok');
+      } catch (err) {
+        toast(err.message, 'err');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save changes';
+      }
+    };
   }
 }

@@ -41,5 +41,9 @@ app = create_app()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT") or 3000)
-    print(f"Store showcase running at http://localhost:{port}", flush=True)
-    app.run(host="127.0.0.1", port=port, threaded=True)
+    # 127.0.0.1 by default -- loopback only. Set HOST=0.0.0.0 to make a dev
+    # server reachable from another device on the same network, such as a
+    # phone; never do that with DEMO_MODE's one-tap sign-in still enabled.
+    host = os.environ.get("HOST") or "127.0.0.1"
+    print(f"Store showcase running at http://{host}:{port}", flush=True)
+    app.run(host=host, port=port, threaded=True)

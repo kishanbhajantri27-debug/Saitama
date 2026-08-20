@@ -1,34 +1,156 @@
 import { api, ApiError } from '../api.js';
+import { cart } from '../cart.js';
 import { navigate, refreshCustomerBadges, state } from '../state.js';
 import {
   confirmSheet, el, empty, errorBox, h, money, sheet,
   skeletonGrid, skeletonLines, staleWarning, statusLine, timeline, toast,
 } from '../ui.js';
 
-const SEARCH_IDEAS = ['Nike shoes', 'Samsung charger', 'Black shirt', 'Notebook', 'Bluetooth headphones'];
+const SEARCH_IDEAS = ['Basmati rice', 'Cow ghee', 'Almonds', 'Toor dal', 'Fresh paneer'];
 
-const img = (p) => p.image_url
-  ? `<img src="${h(p.image_url)}" alt="${h(p.name || p.product_name || '')}" loading="lazy">`
-  : '';
+/* ---------- default imagery ----------
+   A product added without a photo (see README: the +Add form's photo is
+   optional) still needs to look like something on the shelf, not a blank
+   box. This picks a category-appropriate emoji on a coloured tile instead
+   of inventing a fake product photo. */
+const CATEGORY_ICONS = [
+  [/millet|pulse|dal|lentil|chana|moong|ragi/i, '🫘'],
+  [/grain|rice|wheat|atta|flour|poha/i, '🌾'],
+  [/nut|cashew|almond|raisin|walnut|dry ?fruit/i, '🥜'],
+  [/ghee|\boil\b/i, '🫙'],
+  [/milk|dairy|paneer|curd|butter/i, '🥛'],
+  [/spice|masala|turmeric|chilli|coriander/i, '🌶️'],
+  [/tea|coffee|beverage|juice|drink/i, '☕'],
+  [/organic|oats|honey|jaggery/i, '🍯'],
+  [/combo|hamper|bundle/i, '🎁'],
+  [/soap|detergent|dishwash|clean|household/i, '🧴'],
+  [/baby/i, '🍼'],
+];
+
+export function categoryIcon(name = '') {
+  const hit = CATEGORY_ICONS.find(([re]) => re.test(name));
+  return hit ? hit[1] : '🏷️';
+}
+
+function hueFor(seed) {
+  let hue = 0;
+  for (const ch of String(seed || 'x')) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+  return hue;
+}
+
+const img = (p) => {
+  if (p.image_url) return `<img src="${h(p.image_url)}" alt="${h(p.name || p.product_name || '')}" loading="lazy">`;
+  const emoji = categoryIcon(`${p.category || ''} ${p.name || p.product_name || ''}`);
+  const hue = hueFor(p.category || p.name || p.product_name);
+  return `<div class="thumb-default" style="--h:${hue}"><span>${emoji}</span></div>`;
+};
 
 /* ---------- shared pieces ---------- */
 
+// Full product rows (with their variants) as last rendered, so the card's
+// quick actions can reserve/hold without a second round trip to the server.
+const cardData = new Map();
+
+function pickVariant(p) {
+  if (!p || !p.variants || !p.variants.length) return null;
+  return p.variants.find((v) => v.stock && v.stock.available > 0) || p.variants[0];
+}
+
+/** The item as it sits on the shelf: picture under its own spot, then the
+    label (brand, name, pack size, rating, price), then what you can do with
+    it. Low stock is phrased as a nudge, and anything already held for this
+    shopper shows its countdown instead of a second hold button. */
 export function productCard(p) {
+  cardData.set(p.id, p);
   const saved = state.wishlistIds.has(p.id);
+  const variant = pickVariant(p);
+  const held = variant ? state.holds.get(variant.id) : null;
+  const lowLeft = p.status === 'limited' && p.available
+    ? `<span class="leftnote">Only ${p.available} left</span>` : '';
+
   return `
-    <button class="prod" data-product="${p.id}">
+    <div class="prod" data-product="${p.id}">
       <div class="thumb">
         ${img(p)}
-        <span class="heartbtn" data-heart="${p.id}" role="button" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? '❤️' : '🤍'}</span>
+        <button class="heartbtn" data-heart="${p.id}" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? '❤️' : '🤍'}</button>
       </div>
       <div class="body">
-        <span class="brand">${h(p.brand || '')}</span>
+        ${p.brand ? `<span class="brand">${h(p.brand)}</span>` : ''}
         <span class="name">${h(p.name)}</span>
-        ${p.rating ? `<span class="rate">★ ${p.rating} (${p.rating_count})</span>` : ''}
+        ${variant?.label ? `<span class="qty">${h(variant.label)}</span>` : ''}
+        ${p.rating ? `<span class="rate"><span class="star">★</span>${p.rating} <span style="color:var(--muted);font-weight:600">(${p.rating_count})</span></span>` : ''}
         <span class="price">${money(p.price_from)}</span>
-        ${statusLine({ ...p, status: p.status, available: p.available }, { showUnits: true })}
+        ${statusLine({ ...p, status: p.status, available: p.available }, { showUnits: false })}
+        ${lowLeft}
+        ${held ? holdNote(held) : `
+        <div class="cardactions">
+          ${p.status === 'out'
+            ? `<button class="btn ghost block" data-notify="${p.id}">🔔 Tell me when it is back</button>`
+            : `<button class="btn block" data-add="${p.id}">Add to basket</button>
+               <button class="btn ghost block" data-hold="${p.id}">🔒 Hold for 1 hour</button>`}
+        </div>`}
       </div>
-    </button>`;
+    </div>`;
+}
+
+/** "Reserved for you · 59:42" -- the live half is filled in by startClocks(). */
+function holdNote(reservation) {
+  return `
+    <div class="holdnote">
+      <span class="ic">🔒</span>
+      <span>
+        <b>Reserved for you</b>
+        <span class="clock" data-until="${h(reservation.expires_at || '')}">${h(fallbackClock(reservation))}</span>
+      </span>
+    </div>`;
+}
+
+function fallbackClock(reservation) {
+  const mins = reservation.expires_in_minutes;
+  if (mins === null || mins === undefined) return 'Hold active';
+  return `${mins} min remaining`;
+}
+
+/** SQLite hands back "YYYY-MM-DD HH:MM:SS" in UTC with no zone marker, so it
+    has to be spelled out or the browser reads it as local time. */
+function parseUtc(text) {
+  if (!text) return null;
+  const ms = Date.parse(text.replace(' ', 'T') + 'Z');
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Ticks every countdown on screen once a second. Safe to call after any
+    render: it clears the previous timer first. */
+let clockTimer = null;
+export function startClocks(root = document) {
+  if (clockTimer) clearInterval(clockTimer);
+
+  const tick = () => {
+    const nodes = root.querySelectorAll('.clock[data-until]');
+    if (!nodes.length) return;
+    nodes.forEach((node) => {
+      const end = parseUtc(node.dataset.until);
+      if (!end) return;
+      const left = Math.max(0, Math.floor((end - Date.now()) / 1000));
+      if (!left) {
+        node.textContent = 'Hold ended';
+        return;
+      }
+      const m = String(Math.floor(left / 60)).padStart(2, '0');
+      const s = String(left % 60).padStart(2, '0');
+      node.textContent = `${m}:${s} remaining`;
+    });
+  };
+
+  tick();
+  clockTimer = setInterval(() => {
+    if (!document.body.contains(root === document ? document.body : root)) {
+      clearInterval(clockTimer);
+      clockTimer = null;
+      return;
+    }
+    tick();
+  }, 1000);
 }
 
 export function productLine(p) {
@@ -44,7 +166,7 @@ export function productLine(p) {
     </button>`;
 }
 
-/** One place decides what clicking a card or a heart does. */
+/** One place decides what clicking a card, its heart, or its quick actions does. */
 export function wireProductClicks(root) {
   root.querySelectorAll('[data-product]').forEach((node) => {
     node.addEventListener('click', async (e) => {
@@ -54,9 +176,92 @@ export function wireProductClicks(root) {
         await toggleWishlist(Number(heart.dataset.heart), heart);
         return;
       }
+
+      const reserveBtn = e.target.closest('[data-reserve]');
+      if (reserveBtn) {
+        e.stopPropagation();
+        const p = cardData.get(Number(reserveBtn.dataset.reserve));
+        const variant = pickVariant(p);
+        if (p && variant) openReserveSheet(p, variant);
+        return;
+      }
+
+      const addBtn = e.target.closest('[data-add]');
+      if (addBtn) {
+        e.stopPropagation();
+        const p = cardData.get(Number(addBtn.dataset.add));
+        const variant = pickVariant(p);
+        if (!variant || !variant.stock?.available) {
+          toast('That one is off the shelf right now', 'err');
+          return;
+        }
+        cart.add(p, variant, 1);
+        toast(`${p.name} added to your basket`, 'ok');
+        return;
+      }
+
+      const holdBtn = e.target.closest('[data-hold]');
+      if (holdBtn) {
+        e.stopPropagation();
+        await quickHold(Number(holdBtn.dataset.hold), holdBtn);
+        return;
+      }
+
+      const notifyBtn = e.target.closest('[data-notify]');
+      if (notifyBtn) {
+        e.stopPropagation();
+        const p = cardData.get(Number(notifyBtn.dataset.notify));
+        const variant = p && p.variants && p.variants[0];
+        if (variant) {
+          try {
+            await api.notifyMe(state.me.id, variant.id);
+            toast('We will let you know when it is back', 'ok');
+          } catch (err) { toast(err.message, 'err'); }
+        }
+        return;
+      }
+
       navigate(`/p/${node.dataset.product}`);
     });
   });
+}
+
+/** "Hold for 1 hour" reserves one unit for 60 minutes right from the card --
+    no sheet, the same real reservation the product page's picker creates.
+    The card then swaps its buttons for the countdown rather than navigating
+    away, so you can keep shopping with the hold running. */
+async function quickHold(productId, btn) {
+  const p = cardData.get(productId);
+  const variant = pickVariant(p);
+  if (!variant || !variant.stock || !variant.stock.available) {
+    toast('Nothing left to hold', 'err');
+    return;
+  }
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Holding…';
+  try {
+    const res = await api.reserve({
+      variant_id: variant.id,
+      customer_id: state.me.id,
+      quantity: 1,
+      minutes: 60,
+      name: state.me.name,
+    });
+    state.holds.set(variant.id, res);
+    await refreshCustomerBadges();
+
+    const actions = btn.closest('.cardactions');
+    if (actions) {
+      actions.outerHTML = holdNote(state.holds.get(variant.id) || res);
+      startClocks();
+    }
+    toast('Held for you for 1 hour', 'ok');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = original;
+    toast(err.message, 'err');
+  }
 }
 
 async function toggleWishlist(productId, heartNode) {
@@ -78,24 +283,110 @@ async function toggleWishlist(productId, heartNode) {
   }
 }
 
-/* ---------- home ---------- */
+/* ---------- home ----------
+   One storefront layout for every shop type: a hero, a real category strip
+   and grid (from api.categories(), counted against the catalogue actually
+   on the shelf), best sellers, and a right rail modelled on the spotlight /
+   why-shop-with-us / refer-a-friend layout this store's own design uses --
+   built from real store data and real actions (Reserve / Hold 1 hr are
+   genuine reservations, not a cart). The store's `type` only picks a
+   cosmetic icon here; nothing about the layout branches on it. */
+
+const TYPE_ICON = { grocery: '🛒', mall: '🏬', general: '🛍️' };
+
+const FEATURES = [
+  ['🌾', '100% natural', 'No preservatives added'],
+  ['📦', 'Hygienically packed', 'Sealed for your family'],
+  ['🟢', 'Live shelf counts', 'Real stock, not estimates'],
+  ['🔒', 'Hold &amp; collect', 'Keep it aside for an hour'],
+];
+
+/* The aisles, in the order a shopper walks them. Each entry finds the real
+   category it belongs to; anything in the catalogue that matches none of
+   them still gets its own bay at the end, so adding a category upstream
+   never leaves products stranded off the shop floor. */
+const AISLES = [
+  [/grain|rice|wheat|atta|flour/i, '🌾', 'Everyday Grains'],
+  [/millet|pulse|dal|lentil/i, '🫘', 'Millets & Pulses'],
+  [/nut|dry ?fruit/i, '🥜', 'Dry Fruits & Nuts'],
+  [/milk|dairy/i, '🥛', 'Fresh Dairy'],
+  [/ghee|oil|butter/i, '🫙', 'Pure Ghee & Oils'],
+  [/spice|masala/i, '🌶️', 'Indian Spices'],
+  [/organic/i, '🌱', 'Organic Choices'],
+];
+
+/* The themed runs of product down the page. Each one is only drawn if the
+   catalogue actually has something to put in it. */
+const SHELVES = [
+  {
+    title: 'Fresh From Our Shelves',
+    sub: 'Counted most recently, so these numbers are the freshest we have',
+    pick: (all) => [...all.filter((p) => p.status !== 'out')]
+      .sort((a, b) => (a.freshness?.minutes ?? 1e9) - (b.freshness?.minutes ?? 1e9)).slice(0, 8),
+  },
+  {
+    title: 'Popular Grains',
+    sub: 'Rice, wheat and atta for the everyday kitchen',
+    match: /grain|rice|wheat|atta|flour/i,
+  },
+  {
+    title: 'Premium Dry Fruits',
+    sub: 'Almonds, cashews and everything to keep in the good jar',
+    match: /nut|dry ?fruit/i,
+  },
+  {
+    title: 'Pure Dairy',
+    sub: 'Milk, paneer, curd and butter from the cold shelf',
+    match: /milk|dairy/i,
+  },
+  {
+    title: 'Indian Kitchen Essentials',
+    sub: 'The spice box: turmeric, chilli, masalas and whole spices',
+    match: /spice|masala/i,
+  },
+  {
+    title: 'Healthy & Organic',
+    sub: 'Grown and packed with nothing extra added',
+    match: /organic/i,
+  },
+  {
+    title: 'Everyday Essentials',
+    sub: 'The things that quietly run out first',
+    pick: (all) => all.slice(0, 8),
+  },
+  {
+    title: 'Customer Favourites',
+    sub: 'What people here rate the highest',
+    pick: (all) => [...all].sort((a, b) => b.rating - a.rating).slice(0, 8),
+  },
+];
 
 export async function homeView(mount) {
   mount.innerHTML = `
-    <div class="wrap">
-      <div style="padding:16px 0 6px">
-        <h2 style="font-size:1.3rem">Hi there 👋</h2>
-        <p style="color:var(--muted);font-size:.88rem;margin-top:3px">Find what you need at ${h(state.store?.name || 'the store')}.</p>
+    <div class="shop-home">
+      <div class="shop-main showroom">
+        <div id="hero"></div>
+
+        <div class="feature-grid">
+          ${FEATURES.map(([ic, t, d]) => `
+            <div class="feature">
+              <span class="feature-ic">${ic}</span>
+              <span><b>${t}</b><small>${d}</small></span>
+            </div>`).join('')}
+        </div>
+
+        <div class="searchbox" style="margin-top:26px">
+          <span class="ic">🔍</span>
+          <input id="q" type="search" placeholder="Search for grains, dry fruits, milk products…" autocomplete="off">
+        </div>
+        <div class="chips" style="margin-top:12px" id="ideas">
+          ${SEARCH_IDEAS.map((s) => `<button class="chip" data-idea="${h(s)}">${h(s)}</button>`).join('')}
+        </div>
+
+        <div id="catrow"></div>
+        <div id="body">${skeletonGrid(6)}</div>
       </div>
-      <div class="searchbox" style="margin-top:12px">
-        <span class="ic">🔍</span>
-        <input id="q" type="search" placeholder="What are you looking for?" autocomplete="off">
-      </div>
-      <div class="chips" style="margin-top:10px" id="ideas">
-        ${SEARCH_IDEAS.map((s) => `<button class="chip" data-idea="${h(s)}">${h(s)}</button>`).join('')}
-      </div>
-      <button class="btn lg block" id="check" style="margin-top:14px">✅ Check availability of a list</button>
-      <div id="body">${skeletonGrid(4)}</div>
+      <aside class="shop-rail" id="rail"></aside>
     </div>`;
 
   const q = mount.querySelector('#q');
@@ -105,36 +396,243 @@ export async function homeView(mount) {
   mount.querySelectorAll('[data-idea]').forEach((b) => {
     b.onclick = () => navigate(`/search/${encodeURIComponent(b.dataset.idea)}`);
   });
-  mount.querySelector('#check').onclick = () => navigate('/find');
 
+  const hero = mount.querySelector('#hero');
+  const catrow = mount.querySelector('#catrow');
   const body = mount.querySelector('#body');
+  const rail = mount.querySelector('#rail');
   try {
-    const [popular, wishlist] = await Promise.all([
+    const [products, wishlist, categories] = await Promise.all([
       api.products({ sort: 'popular' }),
       api.wishlist(state.me.id),
+      api.categories(),
     ]);
     state.wishlistIds = new Set(wishlist.map((p) => p.id));
 
-    const availableNow = popular.filter((p) => p.status === 'available');
-    const recommended = [...popular].sort((a, b) => b.rating - a.rating).slice(0, 6);
-
-    body.innerHTML = `
-      ${section('🔥 Popular right now', `<div class="hlist">${popular.slice(0, 8).map(productCard).join('')}</div>`)}
-      ${section('🟢 Available now', availableNow.length
-        ? `<div class="prodgrid">${availableNow.slice(0, 6).map(productCard).join('')}</div>`
-        : empty({ icon: '🫙', title: 'Nothing in stock right now', body: 'Check back shortly.' }))}
-      ${section('⭐ Recommended for you', `<div class="hlist">${recommended.map(productCard).join('')}</div>`)}
-      ${wishlist.length ? section('❤️ Your wishlist',
-        `<div class="hlist">${wishlist.map(productCard).join('')}</div>`,
-        '<a class="link" href="#/wishlist">See all</a>') : ''}
-      ${section('🏪 Store', storeCard())}`;
+    hero.innerHTML = heroBanner(products);
+    catrow.innerHTML = catRow(categories, products);
+    body.innerHTML = catalogBody(products, categories);
+    rail.innerHTML = railBody(wishlist);
 
     wireProductClicks(body);
-    const sc = body.querySelector('#storecard');
+    wireProductClicks(rail);
+    startClocks();
+
+    mount.querySelectorAll('[data-cat]').forEach((b) => {
+      b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
+    });
+    const more = mount.querySelector('#morecat');
+    if (more) more.onclick = () => navigate('/categories');
+
+    const shopNow = mount.querySelector('#shopnow');
+    if (shopNow) shopNow.onclick = () => body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const checkBtn = mount.querySelector('#check');
+    if (checkBtn) checkBtn.onclick = () => navigate('/find');
+
+    const sc = rail.querySelector('#storecard');
     if (sc) sc.onclick = () => navigate('/store-info');
   } catch (err) {
     body.innerHTML = errorBox(err.message, 'retry');
     body.querySelector('#retry').onclick = () => homeView(mount);
+  }
+}
+
+/** The display window: the store's promise, and a little shelf of real jars
+    from the catalogue behind it. */
+function heroBanner(products) {
+  const withArt = products.filter((p) => p.image_url);
+  const jarFor = (re) => withArt.find((p) => re.test(`${p.category} ${p.name}`));
+  const picks = [
+    jarFor(/rice|grain/i), jarFor(/dal|pulse|millet/i), jarFor(/nut|almond|cashew/i),
+    jarFor(/milk|dairy|paneer/i), jarFor(/ghee|oil/i), jarFor(/spice|masala|turmeric/i),
+  ].filter(Boolean);
+
+  // Fill any gaps so the shelf is never half empty on a small catalogue.
+  const seen = new Set(picks.map((p) => p.id));
+  for (const p of withArt) {
+    if (picks.length >= 6) break;
+    if (!seen.has(p.id)) { picks.push(p); seen.add(p.id); }
+  }
+
+  return `
+    <section class="hero-banner">
+      <div class="hero-text">
+        <span class="hero-eyebrow">🌿 ${h(state.store?.city || 'Your neighbourhood store')}</span>
+        <h1>Pure Food.<br><span class="leaf">Better Life.</span></h1>
+        <p>${h(state.store?.tagline || 'Quality grains, dry fruits and dairy, kept fresh and ready to collect.')}</p>
+        <div class="hero-cta">
+          <button class="btn lg" id="shopnow">Shop now →</button>
+          <button class="btn lg ghost" id="check">✅ Check a shopping list</button>
+        </div>
+      </div>
+      ${picks.length ? `
+      <div class="hero-shelf" aria-hidden="true">
+        ${picks.slice(0, 5).map((p) => `<div class="hero-jar"><img src="${h(p.image_url)}" alt="" loading="lazy"></div>`).join('')}
+        ${picks[5] ? `<div class="hero-jar wide"><img src="${h(picks[5].image_url)}" alt="" loading="lazy"></div>` : ''}
+      </div>` : ''}
+    </section>`;
+}
+
+/** Stable-order grouping: first-seen order for the group, insertion order within it. */
+function groupBy(rows, keyFn, fallback = 'Other') {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = (keyFn(row) || '').trim() || fallback;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
+/** Aisle signs: a quick jump to each real category. */
+function catRow(categories, products) {
+  if (!categories.length) return '';
+  const byCategory = groupBy(products, (p) => p.category, 'Other');
+  const shown = categories.slice(0, 6);
+  return `
+    <div class="cat-row">
+      ${shown.map((c) => `
+        <button class="cat-pill" data-cat="${h(c)}">
+          <span class="cat-pill-ic">${categoryIcon(c)}</span>${h(c)}
+        </button>`).join('')}
+      ${categories.length > shown.length
+        ? `<button class="cat-pill cat-pill-more" id="morecat"><span class="cat-pill-ic">⋯</span>More</button>` : ''}
+    </div>`;
+}
+
+/** A collection bay: real product art lit in an alcove, with the names of
+    what is actually stocked in it underneath. */
+function catCard(name, items) {
+  const art = items.find((p) => p.image_url);
+  const names = items.slice(0, 4).map((p) => p.name.split(/[,(]/)[0].trim());
+  const aisle = AISLES.find(([re]) => re.test(name));
+  return `
+    <button class="cat-card" data-cat="${h(name)}">
+      <span class="cat-thumb">
+        ${art
+          ? `<img src="${h(art.image_url)}" alt="" loading="lazy">`
+          : `<span class="cat-thumb-ic">${aisle ? aisle[1] : categoryIcon(name)}</span>`}
+      </span>
+      <span class="cat-body">
+        <span class="cat-name">${aisle ? aisle[1] + ' ' : ''}${h(name)}</span>
+        ${names.length ? `<span class="cat-items">${h(names.join(' • '))}</span>` : ''}
+        <span class="cat-count">${items.length} item${items.length === 1 ? '' : 's'}</span>
+      </span>
+    </button>`;
+}
+
+/** One shelf of products, lit and planked. */
+function shelf(title, sub, items, link = '') {
+  if (!items.length) return '';
+  return `
+    <div class="sec">
+      <div class="sec-head">
+        <div>
+          <h2>${h(title)}</h2>
+          ${sub ? `<div class="sub">${h(sub)}</div>` : ''}
+        </div>
+        ${link}
+      </div>
+      <div class="shelf"><div class="hlist">${items.map(productCard).join('')}</div></div>
+    </div>`;
+}
+
+function catalogBody(products, categories) {
+  const byCategory = groupBy(products, (p) => p.category, 'Other');
+
+  if (!products.length) {
+    return empty({ icon: '🧺', title: 'The shelves are being stocked', body: 'Check back once the store adds its first products.' });
+  }
+
+  const collections = categories.length ? `
+    <div class="sec">
+      <div class="sec-head">
+        <div>
+          <h2>🌿 Shop by collection</h2>
+          <div class="sub">Every aisle in the store, and what is on it today</div>
+        </div>
+        <a class="link" href="#/categories">View all →</a>
+      </div>
+      <div class="cat-grid">${categories.map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>
+    </div>` : '';
+
+  // Category-matched shelves pull from the real catalogue; the rest are
+  // computed picks. Either way an empty one simply does not render.
+  const runs = SHELVES.map((s) => {
+    const items = s.match
+      ? products.filter((p) => s.match.test(`${p.category} ${p.name}`)).slice(0, 8)
+      : s.pick(products);
+    return shelf(s.title, s.sub, items,
+      s.match ? `<a class="link" href="#/showcase">View all →</a>` : '');
+  }).join('');
+
+  return collections + runs;
+}
+
+/** Right rail, styled after this store's own spotlight / why-shop-with-us /
+    refer-a-friend layout. Everything here is either real store data or, for
+    the parts this demo genuinely has no backend for (referrals), a plain
+    static panel that says so rather than pretending to work. */
+function railBody(wishlist) {
+  const s = state.store;
+  return `
+    ${s ? `
+    <div class="spotlight-card">
+      <div class="spotlight-banner" style="--h:${hueFor(s.name)}"><span>${TYPE_ICON[state.store?.type] || TYPE_ICON.general}</span></div>
+      <div class="spotlight-body">
+        <span class="k">Store spotlight</span>
+        <h3>${h(s.name)}</h3>
+        <p>${h(s.city)} · ★ ${s.rating} · ${s.is_open ? 'Open now' : 'Closed'}</p>
+        <button class="btn ghost sm block" id="storecard">Explore store</button>
+      </div>
+    </div>` : ''}
+
+    <div class="card pad">
+      <h3 class="rail-title">Why shop with us</h3>
+      <ul class="why-list">
+        ${FEATURES.map(([ic, t, d]) => `
+          <li><span class="ic">${ic}</span><span><b>${h(t)}</b><small>${h(d)}</small></span></li>`).join('')}
+      </ul>
+    </div>
+
+    <div class="card pad">
+      <div class="sec-head" style="margin-bottom:${wishlist.length ? '10px' : '2px'}">
+        <h2 style="font-size:.92rem">❤️ Your wishlist</h2>
+        <a class="link" href="#/wishlist">See all</a>
+      </div>
+      ${wishlist.length
+        ? `<div class="stack">${wishlist.slice(0, 3).map(productLine).join('')}</div>`
+        : `<p style="font-size:.82rem;color:var(--muted)">Tap the heart on any product to save it here.</p>`}
+    </div>
+
+    ${s?.phone ? `
+    <div class="card pad">
+      <h3 class="rail-title">Need help?</h3>
+      <a class="btn ghost block sm" style="margin-top:8px" href="tel:${h(s.phone.replace(/\s/g, ''))}">📞 Call the store</a>
+    </div>` : ''}`;
+}
+
+/* ---------- showcase (everything, one collection) ---------- */
+
+export async function showcaseView(mount) {
+  mount.innerHTML = `<div class="wrap" style="padding-top:14px"><div id="body">${skeletonGrid(8)}</div></div>`;
+  const body = mount.querySelector('#body');
+  try {
+    const [products, wishlist] = await Promise.all([
+      api.products({ sort: 'name' }),
+      api.wishlist(state.me.id),
+    ]);
+    state.wishlistIds = new Set(wishlist.map((p) => p.id));
+
+    body.innerHTML = products.length
+      ? `<p style="color:var(--muted);font-size:.84rem;margin-bottom:12px">${products.length} item${products.length === 1 ? '' : 's'} in the collection</p>
+         <div class="prodgrid">${products.map(productCard).join('')}</div>`
+      : empty({ icon: '🗂️', title: 'Nothing in the collection yet', body: 'Check back once the store adds items.' });
+
+    wireProductClicks(body);
+  } catch (err) {
+    body.innerHTML = errorBox(err.message, 'retry');
+    body.querySelector('#retry').onclick = () => showcaseView(mount);
   }
 }
 
@@ -144,28 +642,19 @@ const section = (title, inner, link = '') => `
     ${inner}
   </div>`;
 
-function storeCard() {
-  const s = state.store;
-  if (!s) return '';
-  return `
-    <button class="modecard" id="storecard">
-      <span class="ic">🏪</span>
-      <span style="flex:1">
-        <span class="t">${h(s.name)}</span>
-        <span class="d">★ ${s.rating} · ${h(s.city)} · ${s.is_open ? 'Open now' : 'Closed'} · ${h(s.hours_label)}</span>
-      </span>
-      <span style="color:var(--muted)">›</span>
-    </button>`;
-}
-
 /* ---------- search ---------- */
 
 export async function searchView(mount, term = '') {
+  // A category card/link passes "cat:<name>" instead of free text -- same
+  // encoding the category chips below already use for `filter`.
+  const isCategoryLink = term.startsWith('cat:');
+  const initialQuery = isCategoryLink ? '' : term;
+
   mount.innerHTML = `
     <div class="wrap">
       <div style="padding:14px 0 0" class="searchbox">
         <span class="ic">🔍</span>
-        <input id="q" type="search" placeholder="What are you looking for?" value="${h(term)}" autocomplete="off">
+        <input id="q" type="search" placeholder="What are you looking for?" value="${h(initialQuery)}" autocomplete="off">
         <button class="clr" id="clr" aria-label="Clear">✕</button>
       </div>
       <div class="chips" style="margin-top:12px" id="filters"></div>
@@ -176,7 +665,7 @@ export async function searchView(mount, term = '') {
   const q = mount.querySelector('#q');
   const results = mount.querySelector('#results');
   const count = mount.querySelector('#count');
-  let filter = 'all';
+  let filter = isCategoryLink ? term : 'all';
   let sort = 'popular';
   let categories = [];
 
@@ -239,6 +728,7 @@ export async function productView(mount, id) {
   let product;
   try {
     product = await api.product(id);
+    trackRecentlyViewed(product.id);
   } catch (err) {
     mount.innerHTML = `<div class="wrap" style="padding-top:16px">${
       err.status === 404
@@ -323,7 +813,8 @@ export async function productView(mount, id) {
       <div class="stickybar">
         <button class="btn ghost" id="wish" style="flex:0 0 52px" aria-label="Wishlist">${saved ? '❤️' : '🤍'}</button>
         ${s.available > 0
-          ? `<button class="btn lg" id="reserve">Reserve now</button>`
+          ? `<button class="btn lg" id="addcart">Add to basket</button>
+             <button class="btn lg ghost" id="reserve">🔒 Hold for 1 hour</button>`
           : `<button class="btn lg soft" id="notify">🔔 Notify me when back</button>`}
       </div>`;
 
@@ -341,6 +832,14 @@ export async function productView(mount, id) {
 
     const reserveBtn = mount.querySelector('#reserve');
     if (reserveBtn) reserveBtn.onclick = () => openReserveSheet(product, selected);
+
+    // Adds the option the shopper is actually looking at, not the first one
+    // in stock -- on this screen they have already made that choice.
+    const addBtn = mount.querySelector('#addcart');
+    if (addBtn) addBtn.onclick = () => {
+      cart.add(product, selected, 1);
+      toast(`${product.name} added to your basket`, 'ok');
+    };
 
     const notifyBtn = mount.querySelector('#notify');
     if (notifyBtn) notifyBtn.onclick = async () => {
@@ -566,6 +1065,284 @@ export async function wishlistView(mount) {
   }
 }
 
+/* ---------- recently viewed ----------
+   Kept on this device only (localStorage, most-recent-first, capped) --
+   there is no customer login for this to hang off server-side. */
+const RECENT_KEY = 'recentlyViewed';
+const RECENT_MAX = 12;
+
+function trackRecentlyViewed(productId) {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { ids = []; }
+  ids = ids.filter((id) => id !== productId);
+  ids.unshift(productId);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(ids.slice(0, RECENT_MAX)));
+}
+
+export async function recentlyViewedView(mount) {
+  mount.innerHTML = `<div class="wrap" style="padding-top:16px">
+      <h2 style="margin-bottom:6px">Recently viewed</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">Kept on this device only.</p>
+      <div id="list">${skeletonGrid(4)}</div>
+    </div>`;
+  const list = mount.querySelector('#list');
+
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { ids = []; }
+  if (!ids.length) {
+    list.innerHTML = empty({ icon: '🕓', title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
+    return;
+  }
+
+  try {
+    const [all, wishlist] = await Promise.all([api.products({ sort: 'name' }), api.wishlist(state.me.id)]);
+    state.wishlistIds = new Set(wishlist.map((p) => p.id));
+    const byId = new Map(all.map((p) => [p.id, p]));
+    const rows = ids.map((pid) => byId.get(pid)).filter(Boolean);
+    list.innerHTML = rows.length
+      ? `<div class="prodgrid">${rows.map(productCard).join('')}</div>`
+      : empty({ icon: '🕓', title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
+    wireProductClicks(list);
+  } catch (err) {
+    list.innerHTML = errorBox(err.message);
+  }
+}
+
+/* ---------- basket ----------
+   The basket is a shopping list held on this device. Checkout is what makes
+   it real: every line becomes a one-hour reservation, which is the only
+   thing in this app that actually holds stock. */
+
+export async function cartView(mount) {
+  const draw = () => {
+    const rows = cart.items();
+
+    if (!rows.length) {
+      mount.innerHTML = `<div class="wrap" style="padding-top:24px">
+          ${empty({
+            icon: '🧺',
+            title: 'Your basket is empty',
+            body: 'Add something from the shelves and it will wait for you here.',
+            action: '<button class="btn lg" id="browse" style="margin-top:18px">Browse the shelves</button>',
+          })}
+        </div>`;
+      mount.querySelector('#browse').onclick = () => navigate('/home');
+      return;
+    }
+
+    mount.innerHTML = `
+      <div class="wrap" style="padding-top:22px">
+        <div class="sec-head">
+          <div>
+            <h2>Your basket</h2>
+            <div class="sub">${rows.length} item${rows.length === 1 ? '' : 's'} ready to hold for pickup</div>
+          </div>
+        </div>
+
+        <div class="cart-layout">
+          <div class="stack">
+            ${rows.map((r) => `
+              <div class="cart-line" data-line="${r.variant_id}">
+                <div class="thumb">
+                  ${r.image_url
+                    ? `<img src="${h(r.image_url)}" alt="" loading="lazy">`
+                    : `<span style="font-size:1.6rem">${categoryIcon(`${r.category} ${r.name}`)}</span>`}
+                </div>
+                <div class="meta">
+                  ${r.brand ? `<div class="brand">${h(r.brand)}</div>` : ''}
+                  <div class="name">${h(r.name)}</div>
+                  ${r.label ? `<div class="qty">${h(r.label)}</div>` : ''}
+                  <div class="qty">${money(r.price)} each</div>
+                </div>
+                <div class="stepper">
+                  <button data-dec="${r.variant_id}" aria-label="One fewer">−</button>
+                  <span class="n">${r.quantity}</span>
+                  <button data-inc="${r.variant_id}" aria-label="One more">+</button>
+                </div>
+                <div class="lineprice">${money(r.price * r.quantity)}</div>
+                <button class="iconbtn" data-del="${r.variant_id}" aria-label="Remove">✕</button>
+              </div>`).join('')}
+          </div>
+
+          <div class="cart-summary">
+            <h3>Basket total</h3>
+            <div class="kv"><span class="k">Items</span><span class="v">${cart.count()}</span></div>
+            <div class="kv"><span class="k">Pickup at</span><span class="v">${h(state.store?.name || '')}</span></div>
+            <div class="total"><span>Total</span><span>${money(cart.total())}</span></div>
+            <button class="btn lg block" id="checkout" style="margin-top:16px">🔒 Hold all for 1 hour</button>
+            <p class="cart-note">
+              Nothing is charged here. Holding puts each item aside at the counter for an hour
+              so it is still there when you arrive.
+            </p>
+          </div>
+        </div>
+      </div>`;
+
+    mount.querySelectorAll('[data-inc]').forEach((b) => {
+      b.onclick = () => {
+        const row = rows.find((r) => r.variant_id === Number(b.dataset.inc));
+        cart.setQuantity(row.variant_id, row.quantity + 1);
+        draw();
+      };
+    });
+    mount.querySelectorAll('[data-dec]').forEach((b) => {
+      b.onclick = () => {
+        const row = rows.find((r) => r.variant_id === Number(b.dataset.dec));
+        cart.setQuantity(row.variant_id, row.quantity - 1);
+        draw();
+      };
+    });
+    mount.querySelectorAll('[data-del]').forEach((b) => {
+      b.onclick = () => { cart.remove(Number(b.dataset.del)); draw(); };
+    });
+
+    mount.querySelector('#checkout').onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Holding your basket…';
+
+      const held = [];
+      const failed = [];
+      for (const row of rows) {
+        try {
+          const res = await api.reserve({
+            variant_id: row.variant_id,
+            customer_id: state.me.id,
+            quantity: row.quantity,
+            minutes: 60,
+            name: state.me.name,
+          });
+          held.push(res);
+          cart.remove(row.variant_id);
+        } catch (err) {
+          failed.push(`${row.name}: ${err.message}`);
+        }
+      }
+
+      await refreshCustomerBadges();
+
+      if (!held.length) {
+        btn.disabled = false;
+        btn.textContent = '🔒 Hold all for 1 hour';
+        toast(failed[0] || 'Could not hold those items', 'err');
+        draw();
+        return;
+      }
+
+      // A partly-held basket keeps whatever could not be held, so it is
+      // obvious what still needs attention.
+      if (failed.length) toast(`Held ${held.length}, but ${failed.length} could not be held`, 'err');
+      else toast('Your basket is held for the next hour', 'ok');
+
+      if (held.length === 1 && !failed.length) navigate(`/reservation/${held[0].id}`);
+      else navigate('/reservations');
+    };
+  };
+
+  draw();
+}
+
+/* ---------- categories ---------- */
+
+export async function categoriesView(mount) {
+  mount.innerHTML = `<div class="wrap" style="padding-top:16px">
+      <h2 style="margin-bottom:14px">Shop by category</h2>
+      <div id="list">${skeletonGrid(6)}</div>
+    </div>`;
+  const list = mount.querySelector('#list');
+  try {
+    const [products, categories] = await Promise.all([api.products({ sort: 'name' }), api.categories()]);
+    const byCategory = groupBy(products, (p) => p.category, 'Other');
+    list.innerHTML = categories.length
+      ? `<div class="cat-grid">${categories.map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>`
+      : empty({ icon: '🗂️', title: 'No categories yet', body: 'They appear as the store adds products.' });
+    list.querySelectorAll('[data-cat]').forEach((b) => {
+      b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
+    });
+  } catch (err) {
+    list.innerHTML = errorBox(err.message);
+  }
+}
+
+/* ---------- account ---------- */
+
+export async function accountView(mount) {
+  const s = state.store;
+  mount.innerHTML = `
+    <div class="wrap" style="padding-top:16px">
+      <div class="card pad" style="display:flex;gap:14px;align-items:center">
+        <span class="account-avatar">👤</span>
+        <span style="flex:1">
+          <b style="display:block;font-size:1rem">Hi, ${h(state.me?.name || 'there')}</b>
+          <small style="color:var(--muted)">Browsing as a guest — this showcase needs no account.</small>
+        </span>
+      </div>
+
+      <div class="stack" style="margin-top:14px">
+        <button class="modecard" data-go="/reservations">
+          <span class="ic">🎟️</span>
+          <span style="flex:1"><span class="t">My orders</span><span class="d">Reservations you have placed</span></span>
+          <span style="color:var(--muted)">›</span>
+        </button>
+        <button class="modecard" data-go="/wishlist">
+          <span class="ic">❤️</span>
+          <span style="flex:1"><span class="t">Wishlist</span><span class="d">Items you are watching</span></span>
+          <span style="color:var(--muted)">›</span>
+        </button>
+        <button class="modecard" data-go="/recently-viewed">
+          <span class="ic">🕓</span>
+          <span style="flex:1"><span class="t">Recently viewed</span><span class="d">Kept on this device</span></span>
+          <span style="color:var(--muted)">›</span>
+        </button>
+        <button class="modecard" data-go="/store-info">
+          <span class="ic">🏪</span>
+          <span style="flex:1"><span class="t">Store info</span><span class="d">${h(s?.city || '')} · ${s?.is_open ? 'Open now' : 'Closed'}</span></span>
+          <span style="color:var(--muted)">›</span>
+        </button>
+      </div>
+
+      <p class="demonote">Demo data only. No account, no payment, no real customer details.</p>
+    </div>`;
+
+  mount.querySelectorAll('[data-go]').forEach((b) => {
+    b.onclick = () => navigate(b.dataset.go);
+  });
+}
+
+/* ---------- scan / code lookup ----------
+   The bottom bar's scanner button. Real detection lives in store mode; for a
+   shopper the useful half is the lookup itself, so this takes the SKU or
+   barcode printed on the shelf label and jumps to that product. */
+
+export function openLookupSheet() {
+  sheet(`
+    <h3>Scan or enter a code</h3>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">Type the SKU or barcode from the shelf label to jump straight to that product.</p>
+    <label class="field" style="margin-bottom:14px">
+      <span class="lbl">SKU or barcode</span>
+      <input class="input" id="code" placeholder="e.g. AML-GHEE-500" autocomplete="off">
+    </label>
+    <button class="btn lg block" id="go">Find product</button>
+  `, {
+    onMount(panel, close) {
+      const input = panel.querySelector('#code');
+      const submit = async () => {
+        const code = input.value.trim();
+        if (!code) return toast('Enter a code first', 'err');
+        try {
+          const hit = await api.lookup(code);
+          close();
+          navigate(`/p/${hit.product_id}`);
+        } catch (err) {
+          toast(err.status === 404 ? 'No product with that code' : err.message, 'err');
+        }
+      };
+      panel.querySelector('#go').onclick = submit;
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    },
+  });
+}
+
 /* ---------- find everything ---------- */
 
 export async function findView(mount) {
@@ -585,12 +1362,12 @@ export async function findView(mount) {
 
   const rows = mount.querySelector('#rows');
   const addRow = (value = '') => {
-    rows.appendChild(el(`<div class="row"><input class="input" placeholder="e.g. Nike shoes" value="${h(value)}"><button class="iconbtn" data-del aria-label="Remove">✕</button></div>`));
+    rows.appendChild(el(`<div class="row"><input class="input" placeholder="e.g. Basmati rice" value="${h(value)}"><button class="iconbtn" data-del aria-label="Remove">✕</button></div>`));
     rows.lastElementChild.querySelector('[data-del]').onclick = (e) => {
       if (rows.children.length > 1) e.currentTarget.closest('.row').remove();
     };
   };
-  ['Nike shoes', 'Black jeans', 'Backpack'].forEach(addRow);
+  ['Basmati rice', 'Toor dal', 'Cow ghee'].forEach(addRow);
   mount.querySelector('#add').onclick = () => addRow();
 
   mount.querySelector('#go').onclick = async () => {

@@ -49,3 +49,10 @@ DEMO_PASSWORDS = {
     "staff": os.environ.get("DEMO_STAFF_PASSWORD"),
     "exstaff": os.environ.get("DEMO_EXSTAFF_PASSWORD"),
 }
+
+# The parent platform's credential for this store -- a shared secret, not a
+# staff session, because the parent is a machine, not an employee. Unset by
+# default: an empty token would otherwise mean "compare against ''", which a
+# request sending no token at all would trivially satisfy. Absent means the
+# integration is off, not open.
+PARENT_TOKEN = os.environ.get("PARENT_TOKEN") or None

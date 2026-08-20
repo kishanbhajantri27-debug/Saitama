@@ -10,6 +10,11 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  -- Drives which showcase layout the customer side renders: 'general' is the
+  -- flat product-grid showcase this app started as; other values (grocery,
+  -- mall, ...) switch to their own layout in the client. Unrecognised values
+  -- fall back to 'general' there, so this never needs a CHECK constraint.
+  type TEXT NOT NULL DEFAULT 'general',
   tagline TEXT DEFAULT '',
   rating REAL DEFAULT 0,
   city TEXT DEFAULT '',
@@ -37,15 +42,23 @@ CREATE TABLE IF NOT EXISTS products (
   category TEXT DEFAULT '',
   description TEXT DEFAULT '',
   -- Words a shopper might use that appear nowhere else on the record:
-  -- "shoes" for a trainer, "charger" for an adapter. Without these, a search
-  -- for "Nike shoes" finds nothing, because no field contains "shoes".
+  -- "badam" for almonds, "atta" for wheat flour. Without these, a search
+  -- for "badam" finds nothing, because no field contains that word.
   tags TEXT DEFAULT '',
   image_url TEXT DEFAULT '',
   rating REAL DEFAULT 0,
   rating_count INTEGER DEFAULT 0,
   popularity INTEGER DEFAULT 0,
+  -- The parent platform's own id for this product, when one pushed it here.
+  -- NULL for anything created locally or by seed.py. This, not name or SKU,
+  -- is what a later push matches against -- a shopkeeper renaming "Rice 5kg"
+  -- to "Basmati Rice 5kg" at head office must update this row, not create a
+  -- second one beside it.
+  parent_ref TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_parent_ref
+  ON products(store_id, parent_ref) WHERE parent_ref IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS product_variants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,8 +68,11 @@ CREATE TABLE IF NOT EXISTS product_variants (
   barcode TEXT UNIQUE,
   label TEXT DEFAULT '',            -- "Black - Size 9"
   price REAL NOT NULL DEFAULT 0,
+  parent_ref TEXT,                  -- see products.parent_ref
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_parent_ref
+  ON product_variants(store_id, parent_ref) WHERE parent_ref IS NOT NULL;
 
 -- Stock lives per variant per branch. Availability is on_hand - reserved, and
 -- freshness comes from updated_at, which is what drives the status colours.
@@ -244,7 +260,7 @@ def connect():
 # Bumped whenever the schema changes shape. Everything in this database is
 # regenerated demo data, so a mismatch is resolved by rebuilding rather than by
 # writing a migration for data nobody needs to keep.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 TABLES = [
     "notifications", "wishlists", "invoices", "payments", "orders",

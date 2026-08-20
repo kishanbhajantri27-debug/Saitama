@@ -53,6 +53,8 @@ async function call(path, { method = 'GET', body, staff = false } = {}) {
 export const api = {
   config: () => call('/config'),
   store: () => call('/store'),
+  storeTypes: () => call('/store/types'),
+  updateStore: (fields) => call('/store', { method: 'PUT', staff: true, body: fields }),
   me: () => call('/me'),
 
   products: (params = {}) => {
@@ -62,6 +64,13 @@ export const api = {
     return call(`/products${q ? '?' + q : ''}`);
   },
   product: (id) => call(`/products/${id}`),
+  createProduct: (fields) => call('/products', { method: 'POST', staff: true, body: fields }),
+  updateProduct: (id, fields) => call(`/products/${id}`, { method: 'PUT', staff: true, body: fields }),
+  deleteProduct: (id) => call(`/products/${id}`, { method: 'DELETE', staff: true }),
+  addVariant: (productId, fields) =>
+    call(`/products/${productId}/variants`, { method: 'POST', staff: true, body: fields }),
+  updateVariant: (id, fields) => call(`/variants/${id}`, { method: 'PUT', staff: true, body: fields }),
+  deleteVariant: (id) => call(`/variants/${id}`, { method: 'DELETE', staff: true }),
   categories: () => call('/categories'),
   lookup: (code) => call(`/lookup?code=${encodeURIComponent(code)}`),
   checkMany: (items) => call('/check-many', { method: 'POST', body: { items } }),
