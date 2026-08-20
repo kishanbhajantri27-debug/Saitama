@@ -299,11 +299,13 @@ async function toggleWishlist(productId, heartNode) {
 
 const TYPE_ICON = { grocery: '🛒', mall: '🏬', general: '🛍️' };
 
+// Plain text, escaped at the point of use. Pre-escaping it here meant the
+// rail's h() escaped the ampersand a second time and printed the entity.
 const FEATURES = [
   ['🌾', '100% natural', 'No preservatives added'],
   ['📦', 'Hygienically packed', 'Sealed for your family'],
   ['🟢', 'Live shelf counts', 'Real stock, not estimates'],
-  ['🔒', 'Hold &amp; collect', 'Keep it aside for an hour'],
+  ['🔒', 'Hold & collect', 'Keep it aside for an hour'],
 ];
 
 /* The aisles, in the order a shopper walks them. Each entry finds the real
@@ -376,7 +378,7 @@ export async function homeView(mount) {
           ${FEATURES.map(([ic, t, d]) => `
             <div class="feature">
               <span class="feature-ic">${ic}</span>
-              <span><b>${t}</b><small>${d}</small></span>
+              <span><b>${h(t)}</b><small>${h(d)}</small></span>
             </div>`).join('')}
         </div>
 
@@ -601,13 +603,9 @@ function railBody(wishlist) {
       </div>
     </div>` : ''}
 
-    <div class="card pad">
-      <h3 class="rail-title">Why shop with us</h3>
-      <ul class="why-list">
-        ${FEATURES.map(([ic, t, d]) => `
-          <li><span class="ic">${ic}</span><span><b>${h(t)}</b><small>${h(d)}</small></span></li>`).join('')}
-      </ul>
-    </div>
+    <!-- The four promises live in the strip under the hero. Repeating them
+         here as "Why shop with us" put the same four lines on screen twice,
+         side by side. -->
 
     <div class="card pad">
       <div class="sec-head" style="margin-bottom:${wishlist.length ? '10px' : '2px'}">
@@ -1028,7 +1026,11 @@ export async function reservationView(mount, id) {
 /* ---------- my reservations ---------- */
 
 export async function myReservationsView(mount) {
-  mount.innerHTML = `<div class="wrap" style="padding-top:16px"><h2 style="margin-bottom:14px">Your reservations</h2><div id="list">${skeletonLines(3)}</div></div>`;
+  // The app bar already reads "Your reservations", so this is the standing
+  // note rather than the title again.
+  mount.innerHTML = `<div class="wrap" style="padding-top:20px">
+      <p class="page-note">Show the code at the counter to collect.</p>
+      <div id="list">${skeletonLines(3)}</div></div>`;
   const list = mount.querySelector('#list');
   try {
     const rows = await api.reservations({ customer_id: state.me.id });
@@ -1055,9 +1057,8 @@ export async function myReservationsView(mount) {
 /* ---------- wishlist ---------- */
 
 export async function wishlistView(mount) {
-  mount.innerHTML = `<div class="wrap" style="padding-top:16px">
-      <h2 style="margin-bottom:6px">Your wishlist</h2>
-      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">We flag these the moment they are back on the shelf.</p>
+  mount.innerHTML = `<div class="wrap" style="padding-top:20px">
+      <p class="page-note">We flag these the moment they are back on the shelf.</p>
       <div id="list">${skeletonGrid(4)}</div>
     </div>`;
   const list = mount.querySelector('#list');
@@ -1094,9 +1095,8 @@ function trackRecentlyViewed(productId) {
 }
 
 export async function recentlyViewedView(mount) {
-  mount.innerHTML = `<div class="wrap" style="padding-top:16px">
-      <h2 style="margin-bottom:6px">Recently viewed</h2>
-      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">Kept on this device only.</p>
+  mount.innerHTML = `<div class="wrap" style="padding-top:20px">
+      <p class="page-note">Kept on this device only.</p>
       <div id="list">${skeletonGrid(4)}</div>
     </div>`;
   const list = mount.querySelector('#list');
@@ -1366,9 +1366,8 @@ export function openLookupSheet() {
 
 export async function findView(mount) {
   mount.innerHTML = `
-    <div class="wrap" style="padding-top:16px">
-      <h2>Find everything</h2>
-      <p style="color:var(--muted);font-size:.86rem;margin:6px 0 16px">
+    <div class="wrap" style="padding-top:20px">
+      <p class="page-note">
         List what you need and we will check the whole shelf at once. On the parent platform this same question gets asked of every nearby store.
       </p>
       <div class="card pad">

@@ -94,7 +94,7 @@ function shell({ title, sub, back = false, mode }) {
           ? '<button class="iconbtn" id="menu" aria-label="Open menu">☰</button>'
           : ''}
         ${back ? '<button class="iconbtn" id="back" aria-label="Back">←</button>' : ''}
-        <div class="appbar-title" style="flex:1;min-width:0">
+        <div class="appbar-title">
           <h1>${h(title)}</h1>
           ${sub ? `<div class="sub">${h(sub)}</div>` : ''}
         </div>

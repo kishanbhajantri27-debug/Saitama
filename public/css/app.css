@@ -101,6 +101,9 @@ img { display: block; max-width: 100%; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .appbar h1 .leaf { color: var(--accent); }
+/* Fills the bar and ellipsizes on a phone; the desktop rule below pins it to
+   its text so the search field gives up the width instead. */
+.appbar-title { flex: 1 1 auto; min-width: 0; }
 .appbar .sub {
   font-size: .68rem; color: var(--muted); font-weight: 700; letter-spacing: .14em;
   text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -298,6 +301,10 @@ img { display: block; max-width: 100%; }
 .line .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .line .name { font-weight: 700; font-size: .92rem; }
 .line .sku { font-size: .72rem; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* The stock column right-aligns its text, but the status pill is a flex item
+   that stretched full width and packed its dot and label to the left, so the
+   three lines had a ragged edge. Shrink each to its content instead. */
+.line .stack { align-items: flex-end; }
 
 /* ============ tiles ============ */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 11px; }
@@ -599,11 +606,20 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 /* ---- the promises bar under the window ---- */
+/* Four promises, so the count is laid out deliberately rather than by
+   auto-fit: at tablet widths auto-fit landed on three columns and orphaned
+   the fourth on a row of its own. Two-by-two or one-by-four, never 3+1. */
 .feature-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
   margin-top: 18px; padding: 24px 28px; background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-lg); box-shadow: var(--shadow-1);
 }
+/* Only once the main column is genuinely wide (the rail takes 300px of it)
+   do all four fit on one line without the labels crowding. */
+@media (min-width: 1500px) {
+  .feature-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 .feature { display: flex; align-items: center; gap: 14px; }
 .feature-ic {
   width: 48px; height: 48px; border-radius: 50%; background: var(--info-bg); color: var(--accent);
@@ -790,7 +806,10 @@ tbody tr:hover { background: var(--surface-2); }
    picture, stepper, price and remove button, none of which can shrink. Left
    as `1fr` the column grew past the viewport and pushed the controls off the
    right edge on a phone. */
-.cart-count { font-size: .88rem; color: var(--muted); font-weight: 600; margin-bottom: 18px; }
+/* The standing line under the app bar on a screen whose title the bar
+   already carries -- it says what the page holds instead of repeating its
+   name. */
+.cart-count, .page-note { font-size: .88rem; color: var(--muted); font-weight: 600; margin-bottom: 18px; }
 .cart-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 
 /* Two rows by default: picture and details up top, controls beneath. The
@@ -926,16 +945,8 @@ tbody tr:hover { background: var(--surface-2); }
 .shop-rail .line .meta .name { font-size: .84rem; line-height: 1.3; }
 .shop-rail .line .meta .brand { font-size: .62rem; }
 .shop-rail .line > div:last-child { display: none; }
-.why-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 15px; }
-.why-list li { display: flex; gap: 10px; align-items: flex-start; }
-.why-list .ic {
-  width: 30px; height: 30px; border-radius: 50%; background: var(--ok-bg); color: var(--ok);
-  display: grid; place-items: center; font-size: .88rem; flex-shrink: 0;
-}
-.why-list b { display: block; font-size: .84rem; }
-.why-list small { display: block; font-size: .74rem; color: var(--muted); margin-top: 1px; }
-
-.refer-card { background: linear-gradient(135deg, var(--info-bg), var(--surface)); }
+/* .why-list is gone with the rail panel that duplicated the hero's promise
+   strip; .refer-card went with the referral panel earlier. */
 
 /* ============ raised scanner tab ============
    Centre slot of the bottom bar: a lifted accent circle, the way the
@@ -1003,23 +1014,35 @@ tbody tr:hover { background: var(--surface-2); }
     grid-template-areas: "header header" "sidebar screen"; min-height: 100vh;
   }
   .appbar { grid-area: header; }
-  .appbar .wrap { padding-inline: 24px; }
+  /* The bar spans both grid columns, but .wrap capped it at 940px and centred
+     it across the whole page -- so the brand floated out at x=322 with the
+     sidebar sitting empty beneath the gap to its left. Let it fill the header
+     and register with the columns underneath instead. */
+  .appbar .wrap { max-width: none; padding-inline: 0 28px; }
+  /* the brand sits over the sidebar column */
+  .appbar-title { flex: 0 0 260px; max-width: none; padding-inline: 20px; }
   #menu { display: none; }
 
   .drawer-bg {
     position: static; inset: auto; opacity: 1; pointer-events: auto; background: none; z-index: auto;
   }
+  /* The nav has to travel with the page. Left static it sat at the top of a
+     column as tall as the whole document, so scrolling a long showroom left
+     a blank strip down the entire left side. */
   .drawer {
-    grid-area: sidebar; position: static; transform: none; width: 100%; max-width: none;
-    height: 100%; box-shadow: none; border-right: 1px solid var(--line);
+    grid-area: sidebar; position: sticky; top: var(--header-h);
+    transform: none; width: 100%; max-width: none;
+    height: calc(100vh - var(--header-h)); overflow-y: auto;
+    box-shadow: none; border-right: 1px solid var(--line);
   }
   #drawerClose { display: none; }
 
   .screen { grid-area: screen; padding: 0 28px 40px; min-width: 0; }
   .tabbar { display: none; }
 
-  .appbar-title { flex: 0 1 auto; max-width: 240px; }
-  .header-search { flex: 1; max-width: 420px; }
+  /* The search box absorbs the slack; it can lose width without losing
+     meaning, unlike the title (which was being clipped to 124px). */
+  .header-search { flex: 1 1 0; min-width: 120px; max-width: 420px; }
   .header-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
   .header-account { margin-left: 4px; }
 
