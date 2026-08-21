@@ -1283,9 +1283,23 @@ tbody tr:hover { background: var(--surface-2); }
   .drawer {
     grid-area: sidebar; position: sticky; top: var(--header-h);
     transform: none; width: 100%; max-width: none;
-    height: calc(100vh - var(--header-h)); overflow-y: auto;
+    height: calc(100vh - var(--header-h));
     box-shadow: none; border-right: 1px solid var(--line);
+
+    /* One scroll region, not three. Each .drawer-nav carried its own
+       overflow-y, so the panel scrolled and both lists inside it scrolled
+       too -- three nested scrollbars stacked down the sidebar, and the
+       reason little tracks appear beside the nav in screenshots.
+
+       `contain: paint` matters as well: Chromium puts a sticky element on
+       its own compositing layer, and one that also scrolls repaints on
+       every frame. Containing paint keeps that work inside these bounds so
+       a stale frame cannot bleed out over the content beside it. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    contain: paint;
   }
+  .drawer-nav { overflow: visible; }
   #drawerClose { display: none; }
 
   .screen { grid-area: screen; padding: 0 28px 40px; min-width: 0; }

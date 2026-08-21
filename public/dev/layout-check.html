@@ -116,6 +116,21 @@ function audit(doc, win) {
     }
   });
 
+  // Scroll containers nested inside scroll containers. Every one of these
+  // draws its own scrollbar, and a panel with three tracks running down it
+  // looks broken however correct the boxes are.
+  const nested = [...doc.querySelectorAll('body *')].filter((el) => {
+    const o = win.getComputedStyle(el);
+    const scrolls = /(auto|scroll)/.test(o.overflowY) || /(auto|scroll)/.test(o.overflowX);
+    return scrolls && el.scrollHeight > el.clientHeight + 2;
+  });
+  nested.forEach((outer) => {
+    const inner = nested.filter((el) => el !== outer && outer.contains(el));
+    if (inner.length) {
+      say(`${outer.className.toString().split(' ')[0] || outer.tagName.toLowerCase()} scrolls and so do ${inner.length} thing(s) inside it`);
+    }
+  });
+
   // The action bar must not cover the content it sits over.
   const bar = doc.querySelector('.stickybar');
   if (bar && win.getComputedStyle(bar).display !== 'none') {
