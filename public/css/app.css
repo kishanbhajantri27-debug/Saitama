@@ -569,13 +569,27 @@ tbody tr:hover { background: var(--surface-2); }
   /* details beside the product, and the phone's sticky bar stands down.
      The compound selector is deliberate: .stickybar is defined later in the
      file, so a lone .pdp-bar would lose the tie on specificity. */
-  .pdp { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 40px; }
-  /* The details run longer than the picture, so the stand travels with them
-     rather than leaving a half-page of empty cream beside the text. */
-  .pdp-stage {
-    padding: 34px 32px 40px; min-height: 360px;
-    position: sticky; top: calc(var(--header-h) + 20px);
+  .pdp {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    /* Rows are declared rather than left implicit so `1 / -1` below has a
+       real last line to reach. Against an implicit grid `-1` resolves to the
+       end of the *explicit* one -- a single row here -- so the span quietly
+       collapsed and the two sections dropped underneath the details instead
+       of sitting beside them. Picture, then Details, then Stock history. */
+    grid-template-rows: auto auto auto;
+    gap: 24px 40px; align-items: start;
   }
+  /* The picture takes the top of the left column and Details and Stock
+     history fill in underneath it, so the two columns end at roughly the
+     same place. Previously those two sat below the whole grid, which left a
+     tall band of empty page beside the details and meant the picture only
+     caught up with the text once you had scrolled to the very bottom.
+
+     Placing by column rather than reordering the markup: the source stays
+     picture, product, details, history, which is the order a phone needs. */
+  .pdp-stage { grid-column: 1; padding: 34px 32px 40px; min-height: 360px; }
+  .pdp-info  { grid-column: 2; grid-row: 1 / -1; }
+  .pdp-extra { grid-column: 1; margin-top: 0; }
   .pdp-stage img { max-height: 420px; }
   .pdp-actions { display: flex; }
   .stickybar.pdp-bar { display: none; }

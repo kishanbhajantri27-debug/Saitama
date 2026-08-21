@@ -1012,21 +1012,25 @@ export async function productView(mount, id) {
 
             <div class="pdp-actions">${actions()}</div>
           </div>
-        </div>
 
-        <div class="sec">
-          <div class="sec-head"><h2>Details</h2></div>
-          <div class="card pad">
-            <div class="kv"><span class="k">SKU</span><span class="v">${h(selected.sku)}</span></div>
-            <div class="kv"><span class="k">Barcode</span><span class="v">${h(selected.barcode || '—')}</span></div>
-            <div class="kv"><span class="k">Category</span><span class="v">${h(product.category)}</span></div>
-            <div class="kv"><span class="k">In store</span><span class="v">${h(state.store?.name || '')}, ${h(state.store?.city || '')}</span></div>
+          <!-- These sit under the picture on a wide screen rather than below
+               the whole grid, which is what used to leave a column of empty
+               page beside the details. In source order they stay after the
+               details, so a phone still reads picture, product, then these. -->
+          <div class="sec pdp-extra">
+            <div class="sec-head"><h2>Details</h2></div>
+            <div class="card pad">
+              <div class="kv"><span class="k">SKU</span><span class="v">${h(selected.sku)}</span></div>
+              <div class="kv"><span class="k">Barcode</span><span class="v">${h(selected.barcode || '—')}</span></div>
+              <div class="kv"><span class="k">Category</span><span class="v">${h(product.category)}</span></div>
+              <div class="kv"><span class="k">In store</span><span class="v">${h(state.store?.name || '')}, ${h(state.store?.city || '')}</span></div>
+            </div>
           </div>
-        </div>
 
-        <div class="sec">
-          <div class="sec-head"><h2>Stock history</h2></div>
-          <div id="history" class="card pad"><div class="sk t" style="height:44px"></div></div>
+          <div class="sec pdp-extra">
+            <div class="sec-head"><h2>Stock history</h2></div>
+            <div id="history" class="card pad"><div class="sk t" style="height:44px"></div></div>
+          </div>
         </div>
       </div>
 
