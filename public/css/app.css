@@ -645,7 +645,7 @@ tbody tr:hover { background: var(--surface-2); }
 
 /* ---- display window ---- */
 .hero-banner {
-  position: relative; display: flex; align-items: center; gap: 40px;
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 40px;
   margin-top: 22px; padding: 58px 60px; overflow: hidden; min-height: 380px;
   border-radius: var(--r-2xl); border: 1px solid var(--line);
   background:
@@ -658,7 +658,12 @@ tbody tr:hover { background: var(--surface-2); }
   content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px;
   background: linear-gradient(90deg, transparent, rgba(var(--glow), 1), transparent);
 }
-.hero-text { flex: 1; min-width: 0; position: relative; z-index: 1; }
+/* Both halves declare the width they need, so the shelf drops below the
+   headline whenever the column cannot seat them side by side. This has to
+   be driven by the container, not the viewport: the main column is ~636px
+   inside a 1280px window once the sidebar and rail take their share, and a
+   media query cannot see that. */
+.hero-text { flex: 1 1 360px; min-width: 0; position: relative; z-index: 1; }
 .hero-eyebrow {
   display: inline-flex; align-items: center; gap: 7px; margin-bottom: 18px;
   font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
@@ -671,7 +676,7 @@ tbody tr:hover { background: var(--surface-2); }
 
 /* the shelf of jars in the display window, drawn from real product art */
 .hero-shelf {
-  flex: 0 0 auto; width: 336px; position: relative; z-index: 1;
+  flex: 1 1 300px; position: relative; z-index: 1;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px;
 }
 /* Each jar in its own lit alcove, standing on a wooden lip -- six of them
@@ -909,6 +914,16 @@ tbody tr:hover { background: var(--surface-2); }
    The display window stacks, the jar shelf becomes a single wide strip so it
    still reads as a shelf without eating the whole screen, and the shelves
    lose their side padding so cards keep their width. */
+/* Once the two halves have wrapped, the shelf spreads into a single row
+   rather than staying a narrow 3-up block under the headline. */
+@media (max-width: 900px) {
+  .hero-banner { padding: 34px 30px; gap: 26px; }
+  .hero-text h1 { font-size: 2.4rem; }
+  .hero-text p { max-width: none; }
+  .hero-cta .btn { flex: 1; justify-content: center; }
+  .hero-shelf { grid-template-columns: repeat(6, 1fr); gap: 9px; }
+}
+
 @media (max-width: 720px) {
   .hero-banner { flex-direction: column; align-items: stretch; gap: 20px; padding: 26px 22px; border-radius: var(--r-lg); }
   .hero-text h1 { font-size: 2rem; }
