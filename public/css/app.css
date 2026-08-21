@@ -1269,6 +1269,22 @@ tbody tr:hover { background: var(--surface-2); }
   .header-search { flex: 1 1 0; min-width: 120px; max-width: 420px; }
   .header-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
   .header-account { margin-left: 4px; }
+}
+
+/* Between the sidebar appearing and the window being genuinely wide, the bar
+   is over budget: at 1009px it wanted 1076. Everything but the search is
+   fixed-size and the search is already on its 120px floor, so the surplus
+   had nowhere to go and the last two icon buttons were pushed off the right
+   edge, taking the whole page into sideways scroll.
+
+   Things give way in order of what can be spared: the greeting first, then
+   the mode word (the demo marking itself stays), then the gaps, and the
+   title may drop below its sidebar alignment. */
+@media (min-width: 960px) and (max-width: 1200px) {
+  .appbar .wrap { gap: 10px; }
+  .header-account { display: none; }
+  .modepill .mode-full { display: none; }
+  .appbar-title { flex: 0 1 260px; }
 
   .shop-home { display: flex; align-items: flex-start; gap: 28px; }
   .shop-main { flex: 1; min-width: 0; }
