@@ -136,6 +136,27 @@ img { display: block; max-width: 100%; }
   .iconbtn { width: 34px; height: 34px; }
 }
 
+/* On a 320px phone a search row has 269px to work with. The picture took 62
+   and the stock column 120 -- "Updated 3 hours ago" sets that width -- which
+   left the product name 37px, narrower than the word "Pigeon". The name is
+   the reason the row exists, so the timestamp stands down and the picture
+   gives up a little; the stock status itself stays. */
+@media (max-width: 420px) {
+  .line .fresh { display: none; }
+  .line .thumb { width: 52px; height: 52px; }
+  .line { gap: 10px; padding: 10px; }
+}
+
+/* The smallest phones still in use are 320px wide, and after the scrollbar
+   that is 305px of layout. The store name wanted 85px of the 81 it had --
+   only four short, but enough to clip. The furniture gives up the rest. */
+@media (max-width: 360px) {
+  .appbar .wrap { gap: 6px; padding-inline: 12px; }
+  .appbar h1 { font-size: .98rem; }
+  .iconbtn { width: 30px; height: 30px; font-size: 1rem; }
+  .modepill { padding: 3px 7px; font-size: .62rem; letter-spacing: .04em; }
+}
+
 /* ============ tab bar ============ */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
@@ -1234,7 +1255,13 @@ tbody tr:hover { background: var(--surface-2); }
   .desktop-only { display: flex; }
 
   #app {
-    display: grid; grid-template-columns: 260px 1fr; grid-template-rows: auto 1fr;
+    display: grid;
+    /* The nav gives ground as the window narrows instead of holding 260px
+       and squeezing everything else. minmax(0,1fr) is what lets the content
+       column shrink at all -- an auto track refuses to go below its
+       min-content and pushes the page into sideways scroll. */
+    grid-template-columns: clamp(208px, 19vw, 268px) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
     grid-template-areas: "header header" "sidebar screen"; min-height: 100vh;
   }
   .appbar { grid-area: header; }
@@ -1286,9 +1313,13 @@ tbody tr:hover { background: var(--surface-2); }
   .modepill .mode-full { display: none; }
   .appbar-title { flex: 0 1 260px; }
 
-  .shop-home { display: flex; align-items: flex-start; gap: 28px; }
-  .shop-main { flex: 1; min-width: 0; }
-  .shop-rail { width: 300px; flex-shrink: 0; margin-top: 26px; }
+  /* Both columns state the width they need and the rail drops beneath the
+     shelves when the main column cannot hold 520px. Driven by the column,
+     not the window: what is left after the nav takes its share is the only
+     number that matters here. */
+  .shop-home { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
+  .shop-main { flex: 1 1 520px; min-width: 0; }
+  .shop-rail { flex: 1 1 280px; min-width: 0; margin-top: 26px; }
 }
 
 .header-search { position: relative; }

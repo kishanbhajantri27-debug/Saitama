@@ -36,7 +36,10 @@
 </thead><tbody></tbody></table>
 
 <script>
-const WIDTHS = [390, 430, 768, 900, 1024, 1280, 1440, 1700];
+// Deliberately includes the awkward in-between widths, not just the tidy
+// device sizes -- every fault so far has turned up between the breakpoints
+// rather than at them.
+const WIDTHS = [320, 390, 430, 600, 768, 900, 1024, 1074, 1200, 1280, 1440, 1700, 1920];
 const ROUTES = ['#/home', '#/showcase', '#/categories', '#/search/dal', '#/p/1', '#/cart', '#/wishlist'];
 
 // Each rule returns a list of complaints. Keep them specific: a rule that
@@ -87,6 +90,30 @@ function audit(doc, win) {
 
   doc.querySelectorAll('.cart-line .meta,.line .meta,.pdp-info,.appbar-title').forEach((m) => {
     if (m.getBoundingClientRect().width < 60) say(`${m.className.split(' ')[0]} column collapsed`);
+  });
+
+  // Siblings sitting on top of each other. This is the fault the first
+  // version of this file was blind to: it only looked for things leaving the
+  // viewport, so two panels landing in the same place counted as clean.
+  // Absolutely positioned children are skipped -- overlapping is their job.
+  [['.appbar .wrap > *', 'app bar'], ['.prodgrid > *', 'product grid'],
+   ['.cat-grid > *', 'aisle grid'], ['.shop-home > *', 'home columns'],
+   ['.pdp > *', 'product detail columns'], ['.cart-line > *', 'basket row'],
+   ['.line > *', 'list row'], ['.feature-grid > *', 'promises'],
+   ['.hero-banner > *', 'hero'], ['.cardactions > *', 'card buttons']
+  ].forEach(([sel, label]) => {
+    const els = [...doc.querySelectorAll(sel)].filter((e) => {
+      const b = e.getBoundingClientRect();
+      return b.width > 1 && b.height > 1 && win.getComputedStyle(e).position !== 'absolute';
+    });
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+        const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ox > 2 && oy > 2) say(`${label}: two pieces overlap by ${Math.round(ox)}x${Math.round(oy)}px`);
+      }
+    }
   });
 
   // The action bar must not cover the content it sits over.
