@@ -105,7 +105,7 @@ export const errorBox = (message, retryId = '') =>
     screen of its own rather than a strip of red text. */
 export const offlineState = (retryId = '') => `
   <div class="offline">
-    <img class="offline-art" src="/images/offline.svg" alt="" width="320" height="250">
+    <img class="offline-art" src="/images/offline.png" alt="" width="320" height="203">
     <h3>Cannot reach the store</h3>
     <p>We're having trouble connecting to our store.<br>Please check your internet connection and try again.</p>
     ${retryId ? `<button class="btn lg" id="${retryId}">↻ Try again</button>` : ''}
