@@ -101,6 +101,21 @@ export const empty = ({ icon = '📦', title, body = '', action = '' }) =>
 export const errorBox = (message, retryId = '') =>
   `<div class="errbox">${h(message)}${retryId ? ` <button class="btn sm ghost" id="${retryId}" style="margin-left:8px">Try again</button>` : ''}</div>`;
 
+/** Losing the store is the one failure a shopper can act on, so it gets a
+    screen of its own rather than a strip of red text. */
+export const offlineState = (retryId = '') => `
+  <div class="offline">
+    <img class="offline-art" src="/images/offline.svg" alt="" width="320" height="250">
+    <h3>Cannot reach the store</h3>
+    <p>We're having trouble connecting to our store.<br>Please check your internet connection and try again.</p>
+    ${retryId ? `<button class="btn lg" id="${retryId}">↻ Try again</button>` : ''}
+  </div>`;
+
+/** Picks how a failure should look. A dropped connection is worth a full
+    panel; a 404 or a server fault is not, and reads better as one line. */
+export const failureState = (err, retryId = '') =>
+  (err && err.status === 0 ? offlineState(retryId) : errorBox((err && err.message) || String(err), retryId));
+
 export const skeletonGrid = (n = 6) =>
   `<div class="prodgrid">${'<div class="sk card"></div>'.repeat(n)}</div>`;
 

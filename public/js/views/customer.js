@@ -2,7 +2,7 @@ import { api, ApiError } from '../api.js';
 import { cart } from '../cart.js';
 import { navigate, refreshCustomerBadges, state } from '../state.js';
 import {
-  confirmSheet, el, empty, errorBox, h, money, sheet,
+  confirmSheet, el, empty, errorBox, failureState, h, money, sheet,
   skeletonGrid, skeletonLines, staleWarning, statusLine, timeline, toast,
 } from '../ui.js';
 
@@ -625,7 +625,7 @@ export async function homeView(mount) {
     const sc = rail.querySelector('#storecard');
     if (sc) sc.onclick = () => navigate('/store-info');
   } catch (err) {
-    body.innerHTML = errorBox(err.message, 'retry');
+    body.innerHTML = failureState(err, 'retry');
     body.querySelector('#retry').onclick = () => homeView(mount);
   }
 }
@@ -858,7 +858,7 @@ export async function showcaseView(mount) {
       wireProductClicks(body);
     } catch (err) {
       count.textContent = '';
-      body.innerHTML = errorBox(err.message, 'retry');
+      body.innerHTML = failureState(err, 'retry');
       body.querySelector('#retry').onclick = run;
     }
   }
@@ -962,7 +962,7 @@ export async function searchView(mount, term = '') {
           });
       wireProductClicks(results);
     } catch (err) {
-      results.innerHTML = errorBox(err.message, 'retry');
+      results.innerHTML = failureState(err, 'retry');
       results.querySelector('#retry').onclick = run;
     }
   }
@@ -985,7 +985,7 @@ export async function productView(mount, id) {
     mount.innerHTML = `<div class="wrap" style="padding-top:16px">${
       err.status === 404
         ? empty({ icon: '🕵️', title: 'Product not found', body: 'It may have been removed from this store.' })
-        : errorBox(err.message)
+        : failureState(err)
     }</div>`;
     return;
   }
@@ -1229,7 +1229,7 @@ export async function reservationView(mount, id) {
     try {
       r = await api.reservation(id);
     } catch (err) {
-      mount.innerHTML = `<div class="wrap" style="padding-top:16px">${errorBox(err.message)}</div>`;
+      mount.innerHTML = `<div class="wrap" style="padding-top:16px">${failureState(err)}</div>`;
       return;
     }
 
@@ -1322,7 +1322,7 @@ export async function myReservationsView(mount) {
       b.onclick = () => navigate(`/reservation/${b.dataset.res}`);
     });
   } catch (err) {
-    list.innerHTML = errorBox(err.message);
+    list.innerHTML = failureState(err);
   }
 }
 
@@ -1348,7 +1348,7 @@ export async function wishlistView(mount) {
       </div>`).join('')}</div>`;
     wireProductClicks(list);
   } catch (err) {
-    list.innerHTML = errorBox(err.message);
+    list.innerHTML = failureState(err);
   }
 }
 
@@ -1390,7 +1390,7 @@ export async function recentlyViewedView(mount) {
       : empty({ icon: '🕓', title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
     wireProductClicks(list);
   } catch (err) {
-    list.innerHTML = errorBox(err.message);
+    list.innerHTML = failureState(err);
   }
 }
 
@@ -1554,7 +1554,7 @@ export async function categoriesView(mount) {
       b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
     });
   } catch (err) {
-    list.innerHTML = errorBox(err.message);
+    list.innerHTML = failureState(err);
   }
 }
 
@@ -1694,7 +1694,7 @@ export async function findView(mount) {
           </div>`).join('')}</div>`;
       wireProductClicks(out);
     } catch (err) {
-      out.innerHTML = errorBox(err.message);
+      out.innerHTML = failureState(err);
     }
   };
 }

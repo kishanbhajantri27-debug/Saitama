@@ -474,6 +474,27 @@ tbody tr:hover { background: var(--surface-2); }
 
 .errbox { background: var(--bad-bg); color: var(--bad); border-radius: var(--r); padding: 14px; font-size: .86rem; font-weight: 600; }
 
+/* Losing the store gets a panel rather than a red strip: it is the one
+   failure the shopper can actually do something about, and "check your
+   connection" is easier to act on when it does not look like a fault they
+   caused. */
+.offline {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 34px 24px 40px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1);
+}
+.offline-art { width: min(320px, 78%); height: auto; margin-bottom: 6px; }
+.offline h3 { font-size: 1.5rem; letter-spacing: -.02em; margin-bottom: 10px; }
+.offline p { color: var(--ink-2); font-size: .93rem; line-height: 1.6; max-width: 44ch; }
+.offline .btn { margin-top: 22px; }
+
+@media (max-width: 480px) {
+  .offline { padding: 24px 18px 30px; }
+  .offline h3 { font-size: 1.22rem; }
+  .offline p { font-size: .87rem; }
+  .offline .btn { width: 100%; }
+}
+
 /* ============ landing ============ */
 .landing { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 28px 20px 40px; }
 .landing .logo { width: 68px; height: 68px; border-radius: 20px; background: var(--accent); color: #fff;
