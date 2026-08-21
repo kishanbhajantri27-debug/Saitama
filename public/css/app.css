@@ -274,11 +274,16 @@ img { display: block; max-width: 100%; }
   background: var(--surface-2); padding: 3px 9px; border-radius: var(--r-full);
 }
 .prod .rate .star { color: #d99b1f; }
+/* Opaque rather than blurred: backdrop-filter forced a separate compositing
+   layer for every one of these, and a catalogue page carries 40+. It bought
+   nothing here -- each sits on a flat alcove gradient, not over busy
+   content -- while giving the compositor a lot to juggle behind a sticky
+   header and a fixed tab bar. */
 .heartbtn {
-  position: absolute; top: 11px; right: 11px; width: 38px; height: 38px; border-radius: 50%;
-  border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 90%, transparent);
-  backdrop-filter: blur(6px); cursor: pointer; display: grid; place-items: center;
-  font-size: 1rem; box-shadow: var(--shadow-1); z-index: 2; transition: transform .16s;
+  position: absolute; top: 11px; right: 11px; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface);
+  cursor: pointer; display: grid; place-items: center;
+  font-size: .95rem; box-shadow: var(--shadow-1); z-index: 2; transition: transform .16s;
 }
 .heartbtn:hover { transform: scale(1.1); }
 
