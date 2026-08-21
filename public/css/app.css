@@ -406,6 +406,7 @@ tbody tr:hover { background: var(--surface-2); }
   display: flex; flex-direction: column;
   padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
   transform: translateX(-100%); transition: transform .2s cubic-bezier(.2,.8,.3,1);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .drawer-bg.open .drawer { transform: translateX(0); }
 .drawer-head {
@@ -419,7 +420,11 @@ tbody tr:hover { background: var(--surface-2); }
   border: 1px solid var(--line);
 }
 .drawer-name { flex: 1; font-weight: 800; font-size: 1.02rem; letter-spacing: -.01em; }
-.drawer-nav { display: flex; flex-direction: column; padding: 12px 12px 4px; gap: 3px; overflow-y: auto; }
+/* No overflow here on purpose. Each nav used to scroll on its own, so the
+   panel ended up with a scrollbar per list -- two on a phone, three with
+   the panel's own on a desktop -- and dragging one moved a different list
+   than the one under the pointer. The panel is the single scroll region. */
+.drawer-nav { display: flex; flex-direction: column; padding: 12px 12px 4px; gap: 3px; }
 .drawer-nav button {
   display: flex; align-items: center; gap: 13px; border: none; background: none;
   text-align: left; padding: 11px 13px; border-radius: var(--r-full); cursor: pointer;
@@ -1295,11 +1300,8 @@ tbody tr:hover { background: var(--surface-2); }
        its own compositing layer, and one that also scrolls repaints on
        every frame. Containing paint keeps that work inside these bounds so
        a stale frame cannot bleed out over the content beside it. */
-    overflow-y: auto;
-    overscroll-behavior: contain;
     contain: paint;
   }
-  .drawer-nav { overflow: visible; }
   #drawerClose { display: none; }
 
   .screen { grid-area: screen; padding: 0 28px 40px; min-width: 0; }
