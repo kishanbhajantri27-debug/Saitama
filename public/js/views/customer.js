@@ -813,25 +813,58 @@ function railBody(wishlist) {
 /* ---------- showcase (everything, one collection) ---------- */
 
 export async function showcaseView(mount) {
-  mount.innerHTML = `<div class="wrap" style="padding-top:14px"><div id="body">${skeletonGrid(8)}</div></div>`;
+  let filter = 'all';
+
+  mount.innerHTML = `
+    <div class="wrap" style="padding-top:18px">
+      <div class="chips" id="filters"></div>
+      <p class="page-note" id="count"></p>
+      <div id="body">${skeletonGrid(8)}</div>
+    </div>`;
+
   const body = mount.querySelector('#body');
-  try {
-    const [products, wishlist] = await Promise.all([
-      api.products({ sort: 'name' }),
-      api.wishlist(state.me.id),
-    ]);
-    state.wishlistIds = new Set(wishlist.map((p) => p.id));
+  const count = mount.querySelector('#count');
+  const filters = mount.querySelector('#filters');
 
-    body.innerHTML = products.length
-      ? `<p style="color:var(--muted);font-size:.84rem;margin-bottom:12px">${products.length} item${products.length === 1 ? '' : 's'} in the collection</p>
-         <div class="prodgrid">${products.map(productCard).join('')}</div>`
-      : empty({ icon: '🗂️', title: 'Nothing in the collection yet', body: 'Check back once the store adds items.' });
+  const draw = () => stockFilterChips(filters, filter, (picked) => {
+    filter = picked;
+    draw();
+    run();
+  });
 
-    wireProductClicks(body);
-  } catch (err) {
-    body.innerHTML = errorBox(err.message, 'retry');
-    body.querySelector('#retry').onclick = () => showcaseView(mount);
+  async function run() {
+    body.innerHTML = skeletonGrid(8);
+    count.textContent = '';
+    try {
+      // The shelf count is the server's to decide, so the filter goes with
+      // the request rather than being applied to whatever arrived.
+      const params = { sort: 'name' };
+      if (filter !== 'all') params.status = filter;
+
+      const [products, wishlist] = await Promise.all([
+        api.products(params),
+        api.wishlist(state.me.id),
+      ]);
+      state.wishlistIds = new Set(wishlist.map((p) => p.id));
+
+      count.textContent = products.length
+        ? `${products.length} item${products.length === 1 ? '' : 's'}${filter === 'all' ? ' in the collection' : ''}`
+        : '';
+      body.innerHTML = products.length
+        ? `<div class="prodgrid">${products.map(productCard).join('')}</div>`
+        : empty(NOTHING_MATCHED[filter]
+            || { icon: '🗂️', title: 'Nothing in the collection yet', body: 'Check back once the store adds items.' });
+
+      wireProductClicks(body);
+    } catch (err) {
+      count.textContent = '';
+      body.innerHTML = errorBox(err.message, 'retry');
+      body.querySelector('#retry').onclick = run;
+    }
   }
+
+  draw();
+  run();
 }
 
 const section = (title, inner, link = '') => `
@@ -839,6 +872,29 @@ const section = (title, inner, link = '') => `
     <div class="sec-head"><h2>${title}</h2>${link}</div>
     ${inner}
   </div>`;
+
+/* The stock filters, defined once because search and the showcase both offer
+   them and they must not drift apart. `all` is not a status the API knows --
+   it means "send no status at all". */
+const STOCK_FILTERS = [
+  ['all', 'All'],
+  ['available', '🟢 In stock'],
+  ['limited', '🟡 Limited'],
+  ['out', '🔴 Out'],
+];
+
+const NOTHING_MATCHED = {
+  available: { icon: '🫙', title: 'Nothing in stock right now', body: 'Check back shortly, or look at the whole collection.' },
+  limited: { icon: '🟡', title: 'Nothing running low', body: 'Everything on the shelf is either well stocked or sold out.' },
+  out: { icon: '🎉', title: 'Nothing is sold out', body: 'Every item in the collection is on the shelf.' },
+};
+
+/** Renders the chip row into `host` and calls `onPick` when one is chosen. */
+function stockFilterChips(host, current, onPick) {
+  host.innerHTML = STOCK_FILTERS.map(([value, label]) =>
+    `<button class="chip ${current === value ? 'on' : ''}" data-f="${value}">${label}</button>`).join('');
+  host.querySelectorAll('[data-f]').forEach((b) => { b.onclick = () => onPick(b.dataset.f); });
+}
 
 /* ---------- search ---------- */
 
@@ -876,10 +932,8 @@ export async function searchView(mount, term = '') {
   async function drawFilters() {
     try { categories = await api.categories(); } catch { categories = []; }
     mount.querySelector('#filters').innerHTML = `
-      ${['all', 'available', 'limited', 'out'].map((f) => `
-        <button class="chip ${filter === f ? 'on' : ''}" data-f="${f}">${
-          { all: 'All', available: '🟢 In stock', limited: '🟡 Limited', out: '🔴 Out' }[f]
-        }</button>`).join('')}
+      ${STOCK_FILTERS.map(([value, label]) => `
+        <button class="chip ${filter === value ? 'on' : ''}" data-f="${value}">${label}</button>`).join('')}
       ${categories.map((c) => `<button class="chip ${filter === 'cat:' + c ? 'on' : ''}" data-f="cat:${h(c)}">${h(c)}</button>`).join('')}`;
     mount.querySelectorAll('[data-f]').forEach((b) => {
       b.onclick = () => { filter = b.dataset.f; drawFilters(); run(); };
