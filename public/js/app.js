@@ -164,7 +164,19 @@ function headerSearchAndActions() {
 /** Navigation order mirrors the storefront design: browse (home + the real
     categories) first, then the personal shelves, then the help card. */
 function sidebar(path) {
-  const isOn = (to) => path === to || (to !== '/home' && path.startsWith(to.replace(/\/$/, '')));
+  // Only ever one entry lit, and it is the most specific one that matches.
+  // A plain prefix test lit two at once: picking a category navigates to
+  // /search/cat:<name>, which also starts with the generic Search entry's
+  // /search, so both glowed. The longest matching target wins instead.
+  const targets = [
+    '/home', '/showcase', '/search/',
+    ...state.categories.map((c) => `/search/cat:${encodeURIComponent(c)}`),
+    '/cart', '/reservations', '/wishlist', '/recently-viewed', '/store-info',
+  ];
+  const active = targets
+    .filter((to) => path === to || (to !== '/home' && path.startsWith(to.replace(/\/$/, ''))))
+    .sort((a, b) => b.length - a.length)[0];
+  const isOn = (to) => to === active;
   const link = ([to, icon, label]) =>
     `<button class="${isOn(to) ? 'on' : ''}" data-to="${to}">
        <span class="ic">${icon}</span>${label}
@@ -183,7 +195,7 @@ function sidebar(path) {
           ${[['/home', '🏠', 'Home'], ['/showcase', '🗂️', 'Showcase'], ['/search/', '🔍', 'Search']].map(link).join('')}
           ${C.inAisleOrder(state.categories).map((c) => {
             const to = `/search/cat:${encodeURIComponent(c)}`;
-            return `<button class="${path === to ? 'on' : ''}" data-to="${to}">
+            return `<button class="${isOn(to) ? 'on' : ''}" data-to="${to}">
                       <span class="ic">${C.categoryIcon(c)}</span>${h(c)}
                     </button>`;
           }).join('')}
