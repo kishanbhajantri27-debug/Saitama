@@ -50,6 +50,190 @@ const img = (p) => {
   return `<div class="thumb-default" style="--h:${hue}"><span>${emoji}</span></div>`;
 };
 
+/* ---------- how a picture meets the shelf ----------
+   Two kinds of artwork arrive here and they want opposite treatment. A
+   cut-out (transparent PNG/SVG) should stand on the lit shelf with a shadow
+   under it. A photograph carries its own backdrop, and floating that on the
+   shelf just puts a pale rectangle in the middle of the alcove -- it wants
+   to sit flush in the frame instead.
+
+   Nothing in CSS can tell them apart, so the corners are sampled once per
+   image and the tile is tagged. Same-origin files and data: URLs both draw
+   to a canvas cleanly; anything that refuses is treated as a photo, which
+   is the safe default. */
+const ARTWORK_KIND = new Map();
+const SAMPLE = 20;
+
+function sampleKind(node) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SAMPLE;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(node, 0, 0, SAMPLE, SAMPLE);
+  const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE);
+  const alphaAt = (x, y) => data[(y * SAMPLE + x) * 4 + 3];
+  const edge = SAMPLE - 1;
+  const corners = [[0, 0], [edge, 0], [0, edge], [edge, edge]];
+  const clear = corners.filter(([x, y]) => alphaAt(x, y) < 24).length;
+  // Three clear corners is enough: a cut-out photographed on transparency
+  // can still have one corner clipped by the subject.
+  return clear >= 3 ? 'cutout' : 'photo';
+}
+
+/** True when all four corners are solid -- i.e. the picture sits on a real
+    backdrop rather than already being a cut-out. */
+function hasOpaqueBorder(node) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SAMPLE;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(node, 0, 0, SAMPLE, SAMPLE);
+  const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE);
+  const edge = SAMPLE - 1;
+  const alpha = ([x, y]) => data[(y * SAMPLE + x) * 4 + 3];
+  return [[0, 0], [edge, 0], [0, edge], [edge, edge]].every((c) => alpha(c) >= 24);
+}
+
+/* ---------- lifting a product off its backdrop ----------
+   An uploaded photograph usually arrives on a flat studio background. Shown
+   honestly on a lit cream shelf that reads as a slab of black (or white)
+   around the product, which is exactly what a showroom should not look
+   like.
+
+   So the backdrop is knocked out: flood-fill inwards from every edge pixel
+   while the colour stays within tolerance of the corner, and make what the
+   fill reaches transparent. Filling by connectivity rather than by colour
+   alone is the important part -- a dark label or a shadow *inside* the
+   bottle is never reached from the edge, so it survives, where a plain
+   "everything darker than X" threshold would punch holes through it.
+
+   What remains is cropped to the product and re-encoded as a PNG, so it
+   behaves exactly like a cut-out from then on. The stored image is never
+   modified; this only changes what gets painted. */
+const KNOCKOUT_MAX = 900;        // long edge to process at, to bound the work
+const KNOCKOUT_TOLERANCE = 46;   // per channel, generous enough for JPEG noise
+const KNOCKOUT_MIN = 0.04;       // ignore if it barely removed anything
+
+function knockOutBackdrop(node) {
+  if (!hasOpaqueBorder(node)) return null;   // already a cut-out, leave alone
+
+  const scale = Math.min(1, KNOCKOUT_MAX / Math.max(node.naturalWidth, node.naturalHeight));
+  const W = Math.max(1, Math.round(node.naturalWidth * scale));
+  const H = Math.max(1, Math.round(node.naturalHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(node, 0, 0, W, H);
+  const frame = ctx.getImageData(0, 0, W, H);
+  const d = frame.data;
+
+  const bg = [d[0], d[1], d[2]];
+  const isBackdrop = (o) => Math.abs(d[o] - bg[0]) <= KNOCKOUT_TOLERANCE
+                         && Math.abs(d[o + 1] - bg[1]) <= KNOCKOUT_TOLERANCE
+                         && Math.abs(d[o + 2] - bg[2]) <= KNOCKOUT_TOLERANCE;
+
+  // Flood from the border inwards. Explicit stack, not recursion: a full
+  // frame of backdrop is nearly a million pixels deep.
+  const reached = new Uint8Array(W * H);
+  const stack = [];
+  for (let x = 0; x < W; x++) { stack.push(x, 0, x, H - 1); }
+  for (let y = 0; y < H; y++) { stack.push(0, y, W - 1, y); }
+  while (stack.length) {
+    const y = stack.pop(); const x = stack.pop();
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const p = y * W + x;
+    if (reached[p] || !isBackdrop(p * 4)) continue;
+    reached[p] = 1;
+    stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+
+  let removed = 0;
+  for (let p = 0; p < W * H; p++) if (reached[p]) { d[p * 4 + 3] = 0; removed++; }
+  if (removed / (W * H) < KNOCKOUT_MIN) return null;
+
+  // Soften the cut: a pixel still touching the hole, and still close to the
+  // backdrop, is JPEG fringing rather than product.
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const p = y * W + x;
+      if (reached[p]) continue;
+      const o = p * 4;
+      if (d[o + 3] === 0) continue;
+      const touchesHole = reached[p - 1] || reached[p + 1] || reached[p - W] || reached[p + W];
+      if (!touchesHole) continue;
+      const drift = Math.max(Math.abs(d[o] - bg[0]), Math.abs(d[o + 1] - bg[1]), Math.abs(d[o + 2] - bg[2]));
+      if (drift <= KNOCKOUT_TOLERANCE * 1.8) d[o + 3] = Math.round(255 * (drift / (KNOCKOUT_TOLERANCE * 1.8)));
+    }
+  }
+
+  // Crop to whatever is still standing.
+  let top = H, bottom = -1, left = W, right = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (d[(y * W + x) * 4 + 3] > 12) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  if (bottom < 0) return null;
+
+  ctx.putImageData(frame, 0, 0);
+  const cw = right - left + 1;
+  const ch = bottom - top + 1;
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
+  return out.toDataURL('image/png');
+}
+function tagArtwork(node) {
+  const stage = node.closest('.thumb, .hero-jar, .cat-thumb, .pdp-stage, .hero');
+  if (!stage || !node.naturalWidth) return;
+  const key = node.dataset.artKey || node.currentSrc || node.src;
+
+  // The verdict is cached per source and carries the lifted copy with it --
+  // otherwise the first tile to see an image would be the only one to get
+  // the backdrop removed, and the same product would differ per screen.
+  let seen = ARTWORK_KIND.get(key);
+
+  if (!seen) {
+    let lifted = null;
+    try { lifted = knockOutBackdrop(node); } catch { lifted = null; }
+    if (lifted) {
+      ARTWORK_KIND.set(key, { kind: null, lifted });   // kind decided once it reloads
+      node.dataset.artKey = key;
+      node.src = lifted;                                // re-fires load
+      return;
+    }
+    let kind;
+    try { kind = sampleKind(node); } catch { kind = 'photo'; }
+    seen = { kind, lifted: null };
+    ARTWORK_KIND.set(key, seen);
+  } else if (seen.lifted && node.src !== seen.lifted) {
+    // A later tile showing the same product: hand it the lifted copy too.
+    node.dataset.artKey = key;
+    node.src = seen.lifted;
+    return;
+  } else if (!seen.kind) {
+    // The lifted copy has just finished loading -- classify what remains.
+    try { seen.kind = sampleKind(node); } catch { seen.kind = 'photo'; }
+  }
+
+  stage.classList.toggle('has-cutout', seen.kind === 'cutout');
+  stage.classList.toggle('has-photo', seen.kind === 'photo');
+}
+
+/** Tags anything already decoded; the capture listener below catches the rest. */
+export function tagArtworkIn(root = document) {
+  root.querySelectorAll('img').forEach((node) => { if (node.complete) tagArtwork(node); });
+}
+
+// `load` does not bubble, so this listens on the way down instead.
+document.addEventListener('load', (e) => {
+  if (e.target instanceof HTMLImageElement) tagArtwork(e.target);
+}, true);
+
 /* ---------- shared pieces ---------- */
 
 // Full product rows (with their variants) as last rendered, so the card's
@@ -173,6 +357,7 @@ export function productLine(p) {
 
 /** One place decides what clicking a card, its heart, or its quick actions does. */
 export function wireProductClicks(root) {
+  tagArtworkIn(root);
   root.querySelectorAll('[data-product]').forEach((node) => {
     node.addEventListener('click', async (e) => {
       const heart = e.target.closest('[data-heart]');
@@ -423,6 +608,7 @@ export async function homeView(mount) {
 
     wireProductClicks(body);
     wireProductClicks(rail);
+    tagArtworkIn(mount);
     startClocks();
 
     mount.querySelectorAll('[data-cat]').forEach((b) => {
@@ -756,54 +942,76 @@ export async function productView(mount, id) {
   const render = () => {
     const s = selected.stock;
     const saved = state.wishlistIds.has(product.id);
+    // One set of actions, rendered twice: beside the product on a wide
+    // screen, and in the sticky bar on a phone where the info column has
+    // scrolled far below the fold. Both are wired by class, not id.
+    const actions = () => (s.available > 0
+      ? `<button class="btn lg js-add">Add to basket</button>
+         <button class="btn lg ghost js-hold">🔒 Hold for 1 hour</button>`
+      : `<button class="btn lg soft js-notify">🔔 Notify me when back</button>`);
+
     mount.innerHTML = `
-      <div class="wrap" style="padding-top:14px">
-        <div class="hero">${img(product)}</div>
-
-        <div class="stack" style="margin-top:16px;gap:8px">
-          <span class="brand" style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">${h(product.brand)}</span>
-          <h2 style="font-size:1.3rem">${h(product.name)}</h2>
-          ${product.rating ? `<div style="font-size:.84rem;color:var(--muted);font-weight:600">★ ${product.rating} · ${product.rating_count} ratings</div>` : ''}
-          <div class="price-lg">${money(selected.price)}</div>
-          ${statusLine(s)}
-          ${staleWarning(s)}
-        </div>
-
-        <p style="color:var(--ink-2);font-size:.89rem;margin-top:14px">${h(product.description)}</p>
-
-        <div class="sec">
-          <div class="sec-head"><h2>Options</h2></div>
-          <div class="varlist">
-            ${product.variants.map((v) => `
-              <button class="var ${v.id === selected.id ? 'on' : ''} ${v.stock.available ? '' : 'dead'}"
-                      data-var="${v.id}" ${v.stock.available ? '' : 'disabled'}>
-                <span style="flex:1">
-                  <span class="l">${h(v.label)}</span>
-                  <span class="sku" style="display:block">${h(v.sku)}</span>
-                </span>
-                <span style="text-align:right">
-                  <span style="font-weight:800;display:block">${money(v.price)}</span>
-                  <span class="stat ${h(v.stock.status)}" style="font-size:.72rem"><span class="dot"></span>${
-                    v.stock.available ? `${v.stock.available} left` : 'Out'}</span>
-                </span>
-              </button>`).join('')}
+      <div class="wrap pdp-wrap">
+        <div class="pdp">
+          <!-- the display stand: product lit from above, standing on wood -->
+          <div class="pdp-stage">
+            <button class="heartbtn js-wish" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? '❤️' : '🤍'}</button>
+            ${img(product)}
           </div>
-        </div>
 
-        <div class="sec">
-          <div class="sec-head"><h2>Stock</h2></div>
-          <div class="card pad">
-            <div class="kv"><span class="k">In stock</span><span class="v">${s.on_hand}</span></div>
-            <div class="kv"><span class="k">Reserved by others</span><span class="v">${s.reserved}</span></div>
-            <div class="kv" style="border-top:1px solid var(--line);margin-top:4px;padding-top:10px">
-              <span class="k" style="font-weight:800;color:var(--ink)">Available to reserve</span>
-              <span class="v stat ${h(s.status)}" style="font-size:.95rem"><span class="dot"></span>${s.available}</span>
+          <div class="pdp-info">
+            ${product.brand ? `<span class="pdp-brand">${h(product.brand)}</span>` : ''}
+            <h2 class="pdp-name">${h(product.name)}</h2>
+            ${product.rating ? `<div class="pdp-rating"><span class="star">★</span> ${product.rating}
+              <span class="count">· ${product.rating_count} ratings</span></div>` : ''}
+
+            <div class="pdp-price">
+              <span class="price-lg">${money(selected.price)}</span>
+              ${selected.label ? `<span class="pdp-pack">${h(selected.label)}</span>` : ''}
             </div>
-            <div class="kv"><span class="k">Last counted</span><span class="v">${h(s.freshness.label)}</span></div>
+
+            <div class="pdp-avail">
+              ${statusLine(s, { showUnits: true })}
+            </div>
+            ${staleWarning(s)}
+
+            ${product.description ? `<p class="pdp-desc">${h(product.description)}</p>` : ''}
+
+            ${product.variants.length > 1 ? `
+            <div class="pdp-block">
+              <h3 class="pdp-label">Pack size</h3>
+              <div class="varlist">
+                ${product.variants.map((v) => `
+                  <button class="var ${v.id === selected.id ? 'on' : ''} ${v.stock.available ? '' : 'dead'}"
+                          data-var="${v.id}" ${v.stock.available ? '' : 'disabled'}>
+                    <span style="flex:1">
+                      <span class="l">${h(v.label)}</span>
+                      <span class="sku" style="display:block">${h(v.sku)}</span>
+                    </span>
+                    <span style="text-align:right">
+                      <span style="font-weight:800;display:block">${money(v.price)}</span>
+                      <span class="stat ${h(v.stock.status)}" style="font-size:.72rem"><span class="dot"></span>${
+                        v.stock.available ? `${v.stock.available} left` : 'Out'}</span>
+                    </span>
+                  </button>`).join('')}
+              </div>
+            </div>` : ''}
+
+            <div class="pdp-block">
+              <h3 class="pdp-label">On the shelf</h3>
+              <div class="card pad">
+                <div class="kv"><span class="k">In stock</span><span class="v">${s.on_hand}</span></div>
+                <div class="kv"><span class="k">Reserved by others</span><span class="v">${s.reserved}</span></div>
+                <div class="kv" style="border-top:1px solid var(--line);margin-top:4px;padding-top:10px">
+                  <span class="k" style="font-weight:800;color:var(--ink)">Available to reserve</span>
+                  <span class="v stat ${h(s.status)}" style="font-size:.95rem"><span class="dot"></span>${s.available}</span>
+                </div>
+                <div class="kv"><span class="k">Last counted</span><span class="v">${h(s.freshness.label)}</span></div>
+              </div>
+            </div>
+
+            <div class="pdp-actions">${actions()}</div>
           </div>
-          <p style="font-size:.74rem;color:var(--muted);margin:8px 2px 0">
-            Available = in stock − reserved.
-          </p>
         </div>
 
         <div class="sec">
@@ -822,12 +1030,9 @@ export async function productView(mount, id) {
         </div>
       </div>
 
-      <div class="stickybar">
-        <button class="btn ghost" id="wish" style="flex:0 0 52px" aria-label="Wishlist">${saved ? '❤️' : '🤍'}</button>
-        ${s.available > 0
-          ? `<button class="btn lg" id="addcart">Add to basket</button>
-             <button class="btn lg ghost" id="reserve">🔒 Hold for 1 hour</button>`
-          : `<button class="btn lg soft" id="notify">🔔 Notify me when back</button>`}
+      <div class="stickybar pdp-bar">
+        <button class="btn ghost js-wish" style="flex:0 0 52px" aria-label="Wishlist">${saved ? '❤️' : '🤍'}</button>
+        ${actions()}
       </div>`;
 
     mount.querySelectorAll('[data-var]').forEach((b) => {
@@ -837,30 +1042,39 @@ export async function productView(mount, id) {
       };
     });
 
-    mount.querySelector('#wish').onclick = async (e) => {
-      await toggleWishlist(product.id, null);
-      e.currentTarget.textContent = state.wishlistIds.has(product.id) ? '❤️' : '🤍';
-    };
+    // Both copies of each control share a class, so whichever one the
+    // breakpoint is showing is live.
+    mount.querySelectorAll('.js-wish').forEach((btn) => {
+      btn.onclick = async () => {
+        await toggleWishlist(product.id, null);
+        const mark = state.wishlistIds.has(product.id) ? '❤️' : '🤍';
+        mount.querySelectorAll('.js-wish').forEach((b) => { b.textContent = mark; });
+      };
+    });
 
-    const reserveBtn = mount.querySelector('#reserve');
-    if (reserveBtn) reserveBtn.onclick = () => openReserveSheet(product, selected);
+    mount.querySelectorAll('.js-hold').forEach((btn) => {
+      btn.onclick = () => openReserveSheet(product, selected);
+    });
 
     // Adds the option the shopper is actually looking at, not the first one
     // in stock -- on this screen they have already made that choice.
-    const addBtn = mount.querySelector('#addcart');
-    if (addBtn) addBtn.onclick = () => {
-      cart.add(product, selected, 1);
-      toast(`${product.name} added to your basket`, 'ok');
-    };
+    mount.querySelectorAll('.js-add').forEach((btn) => {
+      btn.onclick = () => {
+        cart.add(product, selected, 1);
+        toast(`${product.name} added to your basket`, 'ok');
+      };
+    });
 
-    const notifyBtn = mount.querySelector('#notify');
-    if (notifyBtn) notifyBtn.onclick = async () => {
-      try {
-        await api.notifyMe(state.me.id, selected.id);
-        toast('We will let you know when it is back', 'ok');
-      } catch (err) { toast(err.message, 'err'); }
-    };
+    mount.querySelectorAll('.js-notify').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api.notifyMe(state.me.id, selected.id);
+          toast('We will let you know when it is back', 'ok');
+        } catch (err) { toast(err.message, 'err'); }
+      };
+    });
 
+    tagArtworkIn(mount);
     loadHistory();
   };
 
@@ -1192,6 +1406,8 @@ export async function cartView(mount) {
         </div>
       </div>`;
 
+    tagArtworkIn(mount);
+
     mount.querySelectorAll('[data-inc]').forEach((b) => {
       b.onclick = () => {
         const row = rows.find((r) => r.variant_id === Number(b.dataset.inc));
@@ -1275,6 +1491,7 @@ export async function categoriesView(mount) {
     list.innerHTML = categories.length
       ? `<div class="cat-grid">${inAisleOrder(categories).map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>`
       : empty({ icon: '🗂️', title: 'No categories yet', body: 'They appear as the store adds products.' });
+    tagArtworkIn(list);
     list.querySelectorAll('[data-cat]').forEach((b) => {
       b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
     });

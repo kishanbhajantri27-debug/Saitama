@@ -258,7 +258,7 @@ img { display: block; max-width: 100%; }
     linear-gradient(178deg, var(--surface-2) 0%, var(--surface-3) 100%);
 }
 .prod .thumb img {
-  width: 76%; height: 76%; object-fit: contain;
+  position: absolute; top: 11%; left: 11%; width: 78%; height: 76%; object-fit: contain;
   filter: drop-shadow(0 14px 16px rgba(90,68,34,.2));
   transition: transform .28s ease;
 }
@@ -302,7 +302,8 @@ img { display: block; max-width: 100%; }
 }
 .line:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .line .thumb { width: 62px; height: 62px; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); flex-shrink: 0; }
-.line .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.line .thumb { position: relative; }
+.line .thumb img { position: absolute; top: 7%; left: 7%; width: 86%; height: 86%; object-fit: contain; }
 .line .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .line .name { font-weight: 700; font-size: .92rem; }
 .line .sku { font-size: .72rem; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -477,8 +478,90 @@ tbody tr:hover { background: var(--surface-2); }
   border-bottom: 9px solid var(--wood);
   box-shadow: var(--shadow-1);
 }
-.hero img { width: 68%; height: 68%; object-fit: contain; filter: drop-shadow(0 16px 18px rgba(90,68,34,.24)); }
+.hero img { max-width: 68%; max-height: 68%; width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 16px 18px rgba(90,68,34,.24)); }
 .price-lg { font-size: 2.2rem; font-weight: 800; letter-spacing: -.03em; }
+
+/* ============ product detail ============
+   The same shelf language as the showroom: the item stands in a lit cream
+   alcove on a wooden lip, with its details set beside it. */
+.pdp-wrap { padding-top: 18px; }
+.pdp { display: grid; gap: 24px; align-items: start; }
+
+.pdp-stage {
+  position: relative; border-radius: var(--r-xl); border: 1px solid var(--line);
+  border-bottom: 10px solid var(--wood);
+  background:
+    radial-gradient(62% 54% at 50% 6%, rgba(var(--glow), 1), transparent 76%),
+    linear-gradient(178deg, var(--surface-2) 0%, var(--surface-3) 100%);
+  box-shadow: var(--shadow-1);
+  display: grid; place-items: center;
+  padding: 34px 34px 40px; min-height: 300px;
+}
+/* the floor the product stands on, behind it */
+.pdp-stage::after {
+  content: ''; position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+  width: 46%; height: 14px; border-radius: 50%; z-index: 0;
+  background: rgba(90,68,34,.16); filter: blur(9px);
+}
+/* Sized by its own proportions -- max-width/height with auto on both axes
+   never crops or stretches, whatever shape the uploaded photo is. The
+   radius simply tidies the corners of a photo that carries its own
+   backdrop; artwork with transparency is unaffected by it. */
+.pdp-stage img {
+  position: relative; z-index: 1;
+  max-width: 100%; max-height: 340px; width: auto; height: auto;
+  object-fit: contain; border-radius: var(--r);
+  filter: drop-shadow(0 16px 20px rgba(90,68,34,.2));
+}
+.pdp-stage .thumb-default { width: 210px; height: 210px; border-radius: var(--r-lg); position: relative; z-index: 1; }
+.pdp-stage .thumb-default span { font-size: 5rem; }
+.pdp-stage .heartbtn { top: 16px; right: 16px; width: 42px; height: 42px; font-size: 1.1rem; }
+
+.pdp-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pdp-brand { font-size: .72rem; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
+.pdp-name { font-size: 1.62rem; line-height: 1.2; letter-spacing: -.025em; }
+.pdp-rating {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  font-size: .82rem; font-weight: 700; color: var(--ink-2);
+  background: var(--surface-2); padding: 5px 12px; border-radius: var(--r-full);
+}
+.pdp-rating .star { color: #d99b1f; }
+.pdp-rating .count { color: var(--muted); font-weight: 600; }
+.pdp-price { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.pdp-pack { font-size: .86rem; font-weight: 700; color: var(--muted); }
+.pdp-avail { margin-top: 2px; }
+.pdp-desc { color: var(--ink-2); font-size: .9rem; line-height: 1.6; margin-top: 6px; }
+.pdp-block { margin-top: 16px; }
+.pdp-label {
+  font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+.pdp-actions { display: none; gap: 10px; margin-top: 22px; }
+.pdp-actions .btn { flex: 1; }
+
+@media (min-width: 900px) {
+  /* details beside the product, and the phone's sticky bar stands down.
+     The compound selector is deliberate: .stickybar is defined later in the
+     file, so a lone .pdp-bar would lose the tie on specificity. */
+  .pdp { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 40px; }
+  /* The details run longer than the picture, so the stand travels with them
+     rather than leaving a half-page of empty cream beside the text. */
+  .pdp-stage {
+    padding: 34px 32px 40px; min-height: 360px;
+    position: sticky; top: calc(var(--header-h) + 20px);
+  }
+  .pdp-stage img { max-height: 420px; }
+  .pdp-actions { display: flex; }
+  .stickybar.pdp-bar { display: none; }
+  .screen:has(.pdp-bar) { padding-bottom: 48px; }
+}
+
+@media (max-width: 480px) {
+  /* the product still gets the room -- it never shrinks to fit the text */
+  .pdp-stage { padding: 22px 20px 30px; min-height: 260px; }
+  .pdp-stage img { max-height: 260px; }
+  .pdp-name { font-size: 1.34rem; }
+}
 .kv { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--line-2); font-size: .85rem; }
 .kv:last-child { border-bottom: none; }
 .kv .k { color: var(--muted); font-weight: 600; }
@@ -605,8 +688,130 @@ tbody tr:hover { background: var(--surface-2); }
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px;
   background: linear-gradient(180deg, var(--wood) 0%, var(--wood-2) 60%, var(--wood-3) 100%);
 }
+/* ============ the display stage ============
+   A single warm spotlight standing behind every product: a lamp just above
+   the frame throwing a golden cone down a beige wall, onto a lit floor.
+   Built from gradients rather than a bitmap so it stays crisp from a 60px
+   basket thumbnail up to the full product stand, costs no request, and
+   follows the theme.
+
+   Layer order, front to back: the pool of light on the floor, the beam
+   itself, the hotspot where the beam leaves the lamp, the floor plane, and
+   the wall with its vignette. */
+:root {
+  --stage-beam: 255, 243, 212;
+  --stage-wall-lit: #ddc094;
+  --stage-wall-mid: #c2a170;
+  --stage-wall-dim: #8d6e46;
+  --stage-floor-near: rgba(255, 244, 216, .5);
+  --stage-floor-far: rgba(168, 133, 88, .22);
+}
+:root[data-theme="dark"] {
+  --stage-beam: 176, 145, 94;
+  --stage-wall-lit: #4b3d2b;
+  --stage-wall-mid: #3a3022;
+  --stage-wall-dim: #241d14;
+  --stage-floor-near: rgba(176, 145, 94, .22);
+  --stage-floor-far: rgba(0, 0, 0, .25);
+}
+
+/* Every product surface outside the home page gets the studio.
+
+   Front to back: the pool of light where the beam lands, the floor plane
+   with its horizon, the beam itself, the hotspot at the lamp, and the wall
+   with a deep vignette carrying the corners. No fixture is drawn -- at
+   thumbnail size a lamp housing is just clutter, and the light reads on its
+   own. */
+:is(.prod .thumb, .cat-thumb, .pdp-stage, .cart-line .thumb, .line .thumb) {
+  background:
+    radial-gradient(46% 11% at 50% 90%, rgba(var(--stage-beam), .62), transparent 74%),
+    linear-gradient(180deg,
+      transparent 0 78.5%,
+      rgba(var(--stage-beam), .34) 78.5% 79.4%,
+      var(--stage-floor-near) 79.4%,
+      var(--stage-floor-far) 100%),
+    conic-gradient(from 0deg at 50% -4%,
+      transparent 0deg 158deg,
+      rgba(var(--stage-beam), .30) 168deg,
+      rgba(var(--stage-beam), .52) 180deg,
+      rgba(var(--stage-beam), .30) 192deg,
+      transparent 202deg 360deg),
+    radial-gradient(30% 16% at 50% -3%, rgba(var(--stage-beam), .95), transparent 74%),
+    radial-gradient(112% 78% at 50% 30%,
+      var(--stage-wall-lit) 0%, var(--stage-wall-mid) 46%, var(--stage-wall-dim) 100%);
+  /* a plain rectangle: the card around it already does the rounding */
+  border: none; border-radius: 0;
+}
+
+/* The wooden lip belongs to the home shelves. Off the home page the product
+   stands on the studio floor instead, so the plank comes off -- restated
+   below so home keeps it. */
+.cat-thumb, .pdp-stage { border-bottom: none; }
+
+/* ...but the home page keeps the cream alcove it already had. Restated here
+   rather than excluded, so the home shelves are guaranteed byte-for-byte
+   what they were before the lamp existed. */
+.shop-home :is(.prod .thumb, .cat-thumb, .hero-jar, .line .thumb) {
+  background:
+    radial-gradient(78% 62% at 50% -8%, rgba(var(--glow), 1) 0%, rgba(var(--glow), .55) 38%, transparent 76%),
+    linear-gradient(178deg, var(--surface-2) 0%, var(--surface-3) 100%);
+}
+/* home's collection bays keep their wooden shelf edge */
+.shop-home .cat-thumb { border-bottom: 7px solid var(--wood); }
+.hero-jar {
+  background:
+    radial-gradient(78% 62% at 50% -8%, rgba(var(--glow), 1) 0%, rgba(var(--glow), .55) 38%, transparent 76%),
+    linear-gradient(178deg, var(--surface-2) 0%, var(--surface-3) 100%);
+}
+
+/* A cut-out stands on the shelf: lit, with its own shadow beneath it.
+   Deeper under the lamp than on the home page's pale alcove, so the product
+   still reads as standing on something. */
+:is(.prod .thumb, .hero-jar, .cat-thumb, .pdp-stage).has-cutout img {
+  filter: drop-shadow(0 13px 15px rgba(58,42,20,.34));
+  border-radius: 0;
+}
+.shop-home :is(.prod .thumb, .cat-thumb, .hero-jar).has-cutout img {
+  filter: drop-shadow(0 12px 14px rgba(90,68,34,.22));
+}
+/* ...and gets the floor to stand on. */
+:is(.prod .thumb, .cat-thumb, .pdp-stage).has-cutout::before {
+  content: ''; position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%);
+  width: 44%; height: 9%; border-radius: 50%; z-index: 0;
+  background: rgba(58,42,20,.26); filter: blur(7px);
+}
+.shop-home :is(.prod .thumb, .cat-thumb).has-cutout::before { background: rgba(90,68,34,.15); }
+
+/* A photograph keeps its own backdrop, so it gets rounded corners and no
+   drop shadow -- a rectangle does not need one. It still stands in the beam
+   with the same breathing room as a cut-out, and the lamp stays lit behind
+   it.
+
+   It used to be stretched edge to edge with the stage blanked out behind
+   it. That only worked while photos arrived padded to a full frame; once
+   the bars are trimmed away the picture is letterboxed instead, and
+   blanking the stage left it sitting on a bare rectangle with no light at
+   all. Note the shorthand was the culprit: `background: <colour>` also
+   resets background-image, taking the whole spotlight with it. */
+:is(.prod .thumb, .hero-jar, .cat-thumb, .cart-line .thumb, .line .thumb, .pdp-stage).has-photo img {
+  border-radius: var(--r-sm); filter: none;
+}
+.pdp-stage.has-photo img { border-radius: var(--r); }
+
+/* Every product tile positions its image against the tile's own box, with
+   width AND height both given, so object-fit:contain has a real frame to
+   letterbox inside.
+
+   Two things bite here. A percentage height on a centred grid item resolves
+   to auto, so the image fell back to its intrinsic ratio; and an absolutely
+   positioned *replaced* element does not stretch to its insets either --
+   width/height:auto means intrinsic size and the bottom inset is simply
+   dropped. Either way a portrait photo grew past the tile and was clipped by
+   overflow:hidden, while landscape artwork happened to fit and looked fine.
+   Stating both dimensions is what actually constrains it. */
 .hero-jar img {
-  width: 100%; height: 100%; object-fit: contain;
+  position: absolute; top: 12px; left: 12px;
+  width: calc(100% - 24px); height: calc(100% - 28px); object-fit: contain;
   filter: drop-shadow(0 6px 8px rgba(90,68,34,.22));
 }
 
@@ -671,7 +876,7 @@ tbody tr:hover { background: var(--surface-2); }
   box-shadow: inset 0 -13px 20px -14px rgba(90,68,34,.5);
 }
 .cat-thumb img {
-  width: 64%; height: 64%; object-fit: contain;
+  position: absolute; top: 15%; left: 18%; width: 64%; height: 66%; object-fit: contain;
   filter: drop-shadow(0 12px 14px rgba(90,68,34,.22));
 }
 .cat-thumb-ic { font-size: 3.2rem; filter: drop-shadow(0 8px 10px rgba(90,68,34,.2)); }
@@ -831,14 +1036,15 @@ tbody tr:hover { background: var(--surface-2); }
 }
 .cart-line .thumb {
   grid-area: thumb; align-self: start;
-  width: 72px; height: 72px; border-radius: var(--r-sm); overflow: hidden;
+  position: relative; width: 72px; height: 72px; border-radius: var(--r-sm); overflow: hidden;
   display: grid; place-items: center; border: 1px solid var(--line-2);
   background:
     radial-gradient(72% 62% at 50% 14%, rgba(var(--glow), 1), transparent 74%),
     linear-gradient(178deg, var(--surface-2), var(--surface-3));
 }
 .cart-line .thumb img {
-  width: 100%; height: 100%; object-fit: contain; padding: 10px;
+  position: absolute; top: 9px; left: 9px;
+  width: calc(100% - 18px); height: calc(100% - 18px); object-fit: contain;
   filter: drop-shadow(0 5px 7px rgba(90,68,34,.2));
 }
 .cart-line .meta { grid-area: meta; min-width: 0; }
@@ -945,7 +1151,7 @@ tbody tr:hover { background: var(--surface-2); }
   width: 48px; height: 48px;
   background: radial-gradient(70% 60% at 50% 16%, rgba(var(--glow), 1), var(--surface-2));
 }
-.shop-rail .line .thumb img { width: 82%; height: 82%; object-fit: contain; margin: auto; }
+.shop-rail .line .thumb img { top: 9%; left: 9%; width: 82%; height: 82%; }
 .shop-rail .line .meta .name { font-size: .84rem; line-height: 1.3; }
 .shop-rail .line .meta .brand { font-size: .62rem; }
 .shop-rail .line > div:last-child { display: none; }
