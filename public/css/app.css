@@ -689,58 +689,57 @@ tbody tr:hover { background: var(--surface-2); }
   background: linear-gradient(180deg, var(--wood) 0%, var(--wood-2) 60%, var(--wood-3) 100%);
 }
 /* ============ the display stage ============
-   A single warm spotlight standing behind every product: a lamp just above
-   the frame throwing a golden cone down a beige wall, onto a lit floor.
-   Built from gradients rather than a bitmap so it stays crisp from a 60px
-   basket thumbnail up to the full product stand, costs no request, and
-   follows the theme.
+   A warm spotlit studio standing behind every product: a lamp above the
+   frame throwing a golden cone down a beige wall, onto a lit floor. It is
+   the photograph itself (public/images/stage.jpg), so the shipped frame is
+   the approved one.
 
-   Layer order, front to back: the pool of light on the floor, the beam
-   itself, the hotspot where the beam leaves the lamp, the floor plane, and
-   the wall with its vignette. */
-:root {
-  --stage-beam: 255, 243, 212;
-  --stage-wall-lit: #ddc094;
-  --stage-wall-mid: #c2a170;
-  --stage-wall-dim: #8d6e46;
-  --stage-floor-near: rgba(255, 244, 216, .5);
-  --stage-floor-far: rgba(168, 133, 88, .22);
-}
-:root[data-theme="dark"] {
-  --stage-beam: 176, 145, 94;
-  --stage-wall-lit: #4b3d2b;
-  --stage-wall-mid: #3a3022;
-  --stage-wall-dim: #241d14;
-  --stage-floor-near: rgba(176, 145, 94, .22);
-  --stage-floor-far: rgba(0, 0, 0, .25);
-}
+   The colour below is only what shows underneath while the file is in
+   flight -- it is sampled from the middle of the photograph so the swap is
+   invisible. */
+:root { --stage-wall-mid: #c2a170; }
+:root[data-theme="dark"] { --stage-wall-mid: #3a3022; }
 
-/* Every product surface outside the home page gets the studio.
+/* The display surfaces -- product cards, aisle bays and the product stand --
+   get the real backdrop photograph, so what ships is the approved frame
+   rather than an approximation of it.
 
-   Front to back: the pool of light where the beam lands, the floor plane
-   with its horizon, the beam itself, the hotspot at the lamp, and the wall
-   with a deep vignette carrying the corners. No fixture is drawn -- at
-   thumbnail size a lamp housing is just clutter, and the light reads on its
-   own. */
-:is(.prod .thumb, .cat-thumb, .pdp-stage, .cart-line .thumb, .line .thumb) {
+   `cover` on a square source means short tiles crop top and bottom. The
+   position sits above centre so the lamp and beam stay in frame on a wide
+   bay, which is the half that carries the look; the floor can afford to go.
+
+   The photograph is a studio shot and lands around luminance 135, against
+   cream surfaces up near 245. Dropped in raw it turns every card into a
+   heavy brown rectangle in what is meant to be a bright showroom, so a warm
+   scrim lifts it into the palette. The product stand takes less of one --
+   it is large enough to carry the full mood. */
+:is(.prod .thumb, .cat-thumb) {
   background:
-    radial-gradient(46% 11% at 50% 90%, rgba(var(--stage-beam), .62), transparent 74%),
-    linear-gradient(180deg,
-      transparent 0 78.5%,
-      rgba(var(--stage-beam), .34) 78.5% 79.4%,
-      var(--stage-floor-near) 79.4%,
-      var(--stage-floor-far) 100%),
-    conic-gradient(from 0deg at 50% -4%,
-      transparent 0deg 158deg,
-      rgba(var(--stage-beam), .30) 168deg,
-      rgba(var(--stage-beam), .52) 180deg,
-      rgba(var(--stage-beam), .30) 192deg,
-      transparent 202deg 360deg),
-    radial-gradient(30% 16% at 50% -3%, rgba(var(--stage-beam), .95), transparent 74%),
-    radial-gradient(112% 78% at 50% 30%,
-      var(--stage-wall-lit) 0%, var(--stage-wall-mid) 46%, var(--stage-wall-dim) 100%);
-  /* a plain rectangle: the card around it already does the rounding */
+    linear-gradient(rgba(255, 250, 240, .46), rgba(255, 250, 240, .40)),
+    var(--stage-wall-mid) url("/images/stage.jpg") center 34% / cover no-repeat;
   border: none; border-radius: 0;
+}
+.pdp-stage {
+  background:
+    linear-gradient(rgba(255, 250, 240, .24), rgba(255, 250, 240, .18)),
+    var(--stage-wall-mid) url("/images/stage.jpg") center 34% / cover no-repeat;
+  border: none; border-radius: 0;
+}
+
+/* A 62px row thumbnail is too small for a studio -- the beam, the horizon
+   and the vignette all collapse into brown mush. Those keep the plain warm
+   surface they had, which is what actually reads at that size. */
+:is(.line .thumb, .cart-line .thumb) {
+  background:
+    radial-gradient(72% 60% at 50% 12%, rgba(var(--glow), 1), transparent 74%),
+    linear-gradient(178deg, var(--surface-2), var(--surface-3));
+}
+
+/* After hours the same photograph, turned down instead of lifted. */
+:root[data-theme="dark"] :is(.prod .thumb, .cat-thumb, .pdp-stage) {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, .5), rgba(0, 0, 0, .5)),
+    url("/images/stage.jpg");
 }
 
 /* The wooden lip belongs to the home shelves. Off the home page the product
