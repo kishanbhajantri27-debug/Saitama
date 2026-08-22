@@ -431,13 +431,18 @@ async function quickHold(productId, btn) {
   btn.disabled = true;
   btn.textContent = 'Holding…';
   try {
-    const res = await api.reserve({
+    const res = await reserveOrExplain({
       variant_id: variant.id,
       customer_id: state.me.id,
       quantity: 1,
       minutes: 60,
       name: state.me.name,
     });
+    if (!res) {                       // ran into the daily limit and backed out
+      btn.disabled = false;
+      btn.textContent = original;
+      return;
+    }
     state.holds.set(variant.id, res);
     await refreshCustomerBadges();
 
@@ -446,7 +451,8 @@ async function quickHold(productId, btn) {
       actions.outerHTML = holdNote(state.holds.get(variant.id) || res);
       startClocks();
     }
-    toast('Held for you for 1 hour', 'ok');
+    const left = await allowanceNote();
+    toast(left ? `Held for 1 hour · ${left}` : 'Held for you for 1 hour', 'ok');
   } catch (err) {
     btn.disabled = false;
     btn.textContent = original;
@@ -1150,11 +1156,117 @@ export async function productView(mount, id) {
   render();
 }
 
+/* ---------- hold allowance ----------
+   Holding is free and takes real stock off the shelf, so there is a daily
+   allowance on how many different items one shopper can park. Running into it
+   is not an error the shopper caused, so it is explained rather than barked
+   at, and it comes with the way out attached. */
+
+/** The wall itself: what the limit is, whether this is becoming a habit, and
+    the code to scan to keep going. Resolves true once more allowance has been
+    granted, false if the shopper backs out. */
+function openHoldLimitSheet(quota) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+    const { panel } = sheet(`
+      <h3>That is today's hold limit</h3>
+      <p class="holdgate-lead">
+        You have ${quota.used} different items on hold today, which is the limit of
+        ${quota.limit}. Each hold keeps something off the shelf for
+        ${quota.hold_minutes} minutes, so the allowance starts fresh tomorrow.
+      </p>
+      <p class="holdgate-lead" style="margin-top:-4px">
+        Holding the same items again does not count — only new ones do.
+      </p>
+
+      ${quota.charges_warning ? `
+        <div class="holdgate-warn">
+          <span class="ic">⚠️</span>
+          <span>${h(quota.charges_message)}</span>
+        </div>` : ''}
+
+      <div class="holdgate-qr">
+        <p class="ttl">Scan to hold ${quota.pass_extra_types} more items today</p>
+        <div class="qrbox">
+          <img src="/api/holds/pass.qr.svg" alt="Payment QR code" width="180" height="180">
+          ${quota.pass_qr_is_demo ? '<span class="demotag">DEMO</span>' : ''}
+        </div>
+        <p class="amt">${h(quota.pass_price)} · ${quota.pass_extra_types} more item types until midnight</p>
+        ${quota.pass_qr_is_demo
+          ? '<p class="note">Placeholder code — nothing is charged and no payment is checked. Swap in the store’s real QR to make this live.</p>'
+          : ''}
+      </div>
+
+      <button class="btn lg block" id="paid">${quota.pass_qr_is_demo ? 'Continue (demo)' : 'I have paid — continue'}</button>
+      <button class="btn ghost block" id="later" style="margin-top:10px">Not now</button>
+    `, {
+      onMount(panel, closeSheet) {
+        panel.querySelector('#later').onclick = () => { closeSheet(); finish(false); };
+        panel.querySelector('#paid').onclick = async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          btn.textContent = 'Unlocking…';
+          try {
+            await api.buyHoldPass(state.me.id, quota.pass_qr_is_demo ? 'demo' : 'scanned');
+            closeSheet();
+            finish(true);
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Continue';
+            toast(err.message, 'err');
+          }
+        };
+      },
+    });
+
+    // The sheet also closes on a backdrop click or Escape, which never reach
+    // the buttons above. Those are a "not now" like any other, and the caller
+    // is still waiting on this promise, so watch for the panel leaving.
+    const watch = setInterval(() => {
+      if (!document.body.contains(panel)) {
+        clearInterval(watch);
+        finish(false);
+      }
+    }, 300);
+  });
+}
+
+/** Place a hold, and if the allowance is spent, explain it and offer the way
+    through. Retries once -- and only once -- after more allowance is granted,
+    so a second refusal cannot loop. */
+async function reserveOrExplain(payload) {
+  try {
+    return await api.reserve(payload);
+  } catch (err) {
+    const quota = err instanceof ApiError && err.data && err.data.reason === 'hold_limit'
+      ? err.data.quota : null;
+    if (!quota) throw err;
+
+    const unlocked = await openHoldLimitSheet(quota);
+    if (!unlocked) return null;
+    return api.reserve(payload);
+  }
+}
+
+/** "2 of 5 left today", for a shopper who has not hit the wall yet. */
+async function allowanceNote() {
+  try {
+    const quota = await api.holdQuota(state.me.id);
+    return quota.remaining
+      ? `${quota.remaining} of ${quota.limit} item types left to hold today`
+      : '';
+  } catch {
+    return '';
+  }
+}
+
 /* ---------- reserve ---------- */
 
 function openReserveSheet(product, variant) {
   const max = variant.stock.available;
-  const mins = state.config?.reservation_minutes || 30;
+  const mins = state.config?.reservation_minutes || 60;
 
   sheet(`
     <h3>Reserve product</h3>
@@ -1173,8 +1285,8 @@ function openReserveSheet(product, variant) {
     <label class="field" style="margin-bottom:12px">
       <span class="lbl">Hold for</span>
       <select class="input" id="mins">
-        <option value="30" selected>30 minutes</option>
-        <option value="60">1 hour</option>
+        <option value="30">30 minutes</option>
+        <option value="60" selected>1 hour</option>
         <option value="120">2 hours</option>
       </select>
     </label>
@@ -1184,21 +1296,34 @@ function openReserveSheet(product, variant) {
     </label>
     <p style="font-size:.76rem;color:var(--muted);margin-bottom:14px">Demo only — no payment is taken and no real details are needed.</p>
     <button class="btn lg block" id="go">Confirm reservation</button>
-    <p style="font-size:.74rem;color:var(--muted);text-align:center;margin-top:10px">Default hold is ${mins} minutes.</p>
+    <p style="font-size:.74rem;color:var(--muted);text-align:center;margin-top:10px">
+      Default hold is ${mins} minutes. <span id="left"></span>
+    </p>
   `, {
     onMount(panel, close) {
+      // Fetched rather than rendered inline: the allowance can be spent from
+      // another tab, and a stale count here would promise room that is gone.
+      allowanceNote().then((note) => {
+        const slot = panel.querySelector('#left');
+        if (slot && note) slot.textContent = note.charAt(0).toUpperCase() + note.slice(1) + '.';
+      });
       panel.querySelector('#go').onclick = async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
         btn.textContent = 'Reserving…';
         try {
-          const res = await api.reserve({
+          const res = await reserveOrExplain({
             variant_id: variant.id,
             customer_id: state.me.id,
             quantity: Number(panel.querySelector('#qty').value),
             minutes: Number(panel.querySelector('#mins').value),
             name: panel.querySelector('#nm').value.trim() || state.me.name,
           });
+          if (!res) {
+            btn.disabled = false;
+            btn.textContent = 'Confirm reservation';
+            return;
+          }
           close();
           navigate(`/reservation/${res.id}`);
         } catch (err) {
@@ -1491,19 +1616,35 @@ export async function cartView(mount) {
 
       const held = [];
       const failed = [];
+      // A basket wider than the daily allowance would otherwise raise the
+      // same sheet on every remaining line. Ask once: unlock and carry on, or
+      // stop asking and leave the rest in the basket.
+      let stoppedAtLimit = false;
+
       for (const row of rows) {
+        const line = {
+          variant_id: row.variant_id,
+          customer_id: state.me.id,
+          quantity: row.quantity,
+          minutes: 60,
+          name: state.me.name,
+        };
         try {
-          const res = await api.reserve({
-            variant_id: row.variant_id,
-            customer_id: state.me.id,
-            quantity: row.quantity,
-            minutes: 60,
-            name: state.me.name,
-          });
+          const res = stoppedAtLimit ? await api.reserve(line) : await reserveOrExplain(line);
+          if (!res) {                 // shopper declined the extra allowance
+            stoppedAtLimit = true;
+            failed.push(`${row.name}: over today's hold limit`);
+            continue;
+          }
           held.push(res);
           cart.remove(row.variant_id);
         } catch (err) {
-          failed.push(`${row.name}: ${err.message}`);
+          if (err instanceof ApiError && err.data && err.data.reason === 'hold_limit') {
+            stoppedAtLimit = true;
+            failed.push(`${row.name}: over today's hold limit`);
+          } else {
+            failed.push(`${row.name}: ${err.message}`);
+          }
         }
       }
 

@@ -7,9 +7,12 @@
 const BASE = '/api';
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data = null) {
     super(message);
     this.status = status;
+    // The parsed body, so a caller that knows the shape of a particular
+    // failure can act on it instead of re-reading the sentence we printed.
+    this.data = data;
   }
 }
 
@@ -45,7 +48,8 @@ async function call(path, { method = 'GET', body, staff = false } = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
 
   if (!res.ok) {
-    throw new ApiError((data && data.error) || `Request failed (${res.status})`, res.status);
+    throw new ApiError(
+      (data && data.error) || `Request failed (${res.status})`, res.status, data);
   }
   return data;
 }
@@ -89,6 +93,9 @@ export const api = {
     call(`/customers/${customerId}/notifications/seen`, { method: 'POST' }),
 
   reserve: (payload) => call('/reservations', { method: 'POST', body: payload }),
+  holdQuota: (customerId) => call(`/customers/${customerId}/hold-quota`),
+  buyHoldPass: (customerId, reference = 'demo') =>
+    call(`/customers/${customerId}/hold-pass`, { method: 'POST', body: { reference } }),
   reservations: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')

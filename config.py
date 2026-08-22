@@ -10,7 +10,44 @@ STORE_ID = os.environ.get("STORE_ID", "STORE-CMR-001")
 BRANCH_ID = os.environ.get("BRANCH_ID", "BRANCH-BLR-01")
 
 # How long a customer's hold survives before the stock is released again.
-RESERVATION_MINUTES = int(os.environ.get("RESERVATION_MINUTES") or 30)
+# The shelf, the buttons and the confirmation all promise an hour; this is the
+# number that has to agree with them.
+RESERVATION_MINUTES = int(os.environ.get("RESERVATION_MINUTES") or 60)
+
+# ---- Hold fair-use ----
+# A hold takes a unit off the shelf for an hour and pays the store nothing, so
+# one shopper reserving the whole aisle is a real cost to somebody. The
+# allowance is spent on distinct product *types* per day rather than on holds:
+# putting the same item back on hold after it lapsed is the same intent and
+# should cost nothing, while spreading holds across the catalogue is what runs
+# the allowance down.
+HOLD_TYPES_PER_DAY = int(os.environ.get("HOLD_TYPES_PER_DAY") or 5)
+
+# Filling the allowance once is a busy shopping day. Filling it most days is a
+# habit the store may want to charge for -- so the shopper is told that while
+# it is still a warning, rather than being surprised by a bill later.
+HOLD_REPEAT_WINDOW_DAYS = int(os.environ.get("HOLD_REPEAT_WINDOW_DAYS") or 7)
+HOLD_REPEAT_DAYS = int(os.environ.get("HOLD_REPEAT_DAYS") or 3)
+
+# What one pass buys: a second allowance for the rest of the same day.
+HOLD_PASS_EXTRA_TYPES = int(os.environ.get("HOLD_PASS_EXTRA_TYPES") or 5)
+HOLD_PASS_PRICE = os.environ.get("HOLD_PASS_PRICE") or "₹20"
+
+# The QR shown when a shopper wants to keep holding past the allowance.
+#
+# This is a placeholder and is built to be swapped: put the store's real UPI
+# (or any payment) string in HOLD_PASS_QR_PAYLOAD and the same screen becomes a
+# live checkout with no code change. Until then the payload says DEMO in the
+# note field, and nothing anywhere reads, verifies or settles it -- so no money
+# moves in either direction.
+HOLD_PASS_QR_PAYLOAD = os.environ.get("HOLD_PASS_QR_PAYLOAD") or (
+    "upi://pay?pa=demo@cmrstore&pn=CMR%20Store&am=20.00&cu=INR"
+    "&tn=Hold%20pass%20-%20DEMO%20QR%2C%20not%20a%20real%20payee"
+)
+
+# True while the placeholder above is still in use. The UI leans on this to
+# label the QR as a demo, so replacing the payload also removes the label.
+HOLD_PASS_QR_IS_DEMO = not os.environ.get("HOLD_PASS_QR_PAYLOAD")
 
 # Stock freshness thresholds, in minutes. Under FRESH it is trusted, over STALE
 # it is shown with a warning, between the two it is simply aged.

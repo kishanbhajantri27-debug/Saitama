@@ -495,6 +495,43 @@ tbody tr:hover { background: var(--surface-2); }
   .offline .btn { width: 100%; }
 }
 
+/* ============ hold allowance ============
+   Shown when a shopper has used the day's holds. It is a policy, not a fault,
+   so it reads as an explanation with a way through rather than as an error. */
+.holdgate-lead { color: var(--ink-2); font-size: .88rem; line-height: 1.6; margin-bottom: 14px; }
+
+.holdgate-warn {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; margin-bottom: 16px;
+  background: var(--warn-bg); color: var(--warn);
+  border-radius: var(--r-md); font-size: .83rem; line-height: 1.55;
+}
+.holdgate-warn .ic { flex: 0 0 auto; font-size: 1rem; line-height: 1.4; }
+
+.holdgate-qr {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 18px 16px 16px; margin-bottom: 18px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.holdgate-qr .ttl { font-weight: 700; font-size: .9rem; margin-bottom: 12px; }
+
+/* The code sits on white whatever the theme is doing: a scanner needs the
+   quiet zone light, and a dark-mode QR simply will not read. */
+.holdgate-qr .qrbox {
+  position: relative; padding: 10px; background: #fff;
+  border-radius: var(--r-sm); box-shadow: var(--shadow-1);
+}
+.holdgate-qr .qrbox img { display: block; width: 180px; height: 180px; }
+.holdgate-qr .demotag {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-14deg);
+  padding: 3px 12px; border-radius: 999px; background: rgba(198, 40, 40, .92); color: #fff;
+  font-size: .68rem; font-weight: 800; letter-spacing: .12em;
+}
+.holdgate-qr .amt { margin-top: 12px; font-size: .84rem; font-weight: 700; }
+.holdgate-qr .note {
+  margin-top: 8px; max-width: 34ch; font-size: .72rem; line-height: 1.5; color: var(--muted);
+}
+
 /* ============ landing ============ */
 .landing { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 28px 20px 40px; }
 .landing .logo { width: 68px; height: 68px; border-radius: 20px; background: var(--accent); color: #fff;

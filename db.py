@@ -237,6 +237,21 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A shopper who bought more hold allowance for one day. Only the grant is
+-- stored: how much of the allowance is already spent is counted from the
+-- reservations themselves, so the two can never drift apart.
+CREATE TABLE IF NOT EXISTS hold_passes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,                -- UTC date the pass applies to
+  extra_types INTEGER NOT NULL DEFAULT 5,
+  reference TEXT DEFAULT '',        -- what was scanned; 'demo' when nothing was
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_hold_passes_day ON hold_passes(customer_id, day);
+CREATE INDEX IF NOT EXISTS idx_reservations_customer ON reservations(customer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
 CREATE INDEX IF NOT EXISTS idx_movements_variant ON inventory_movements(variant_id);
@@ -257,13 +272,18 @@ def connect():
     return conn
 
 
-# Bumped whenever the schema changes shape. Everything in this database is
-# regenerated demo data, so a mismatch is resolved by rebuilding rather than by
-# writing a migration for data nobody needs to keep.
+# Bumped whenever an existing table changes shape. Everything in this database
+# is regenerated demo data, so a mismatch is resolved by rebuilding rather than
+# by writing a migration for data nobody needs to keep.
+#
+# Purely additive changes deliberately do NOT bump it. Every statement above is
+# CREATE ... IF NOT EXISTS, so a new table appears on the next start by itself,
+# whereas bumping would drop all fifteen tables -- taking the store's own
+# catalogue edits and uploaded product photos with them.
 SCHEMA_VERSION = 5
 
 TABLES = [
-    "notifications", "wishlists", "invoices", "payments", "orders",
+    "hold_passes", "notifications", "wishlists", "invoices", "payments", "orders",
     "reservations", "inventory_movements", "inventory", "product_variants",
     "products", "employees", "customers", "branches", "stores", "audit_log",
 ]

@@ -7,7 +7,7 @@ import db
 import seed
 from api.auth import (current_actor, issue_token, require_parent_token, require_permission,
                       require_staff, revoke, revoke_all_for)
-from services import (analytics, audit, catalog, customers, inventory, notifications,
+from services import (analytics, audit, catalog, customers, holds, inventory, notifications,
                       parent_sync, ratelimit, reservations, staff, store)
 from services.security import (NotAuthenticated, PermissionDenied, matrix,
                                permissions_for)
@@ -182,6 +182,7 @@ def get_config():
         reservation_minutes=config.RESERVATION_MINUTES,
         low_stock_at=config.LOW_STOCK_AT,
         demo_mode=config.DEMO_MODE,
+        hold_types_per_day=config.HOLD_TYPES_PER_DAY,
     )
 
 
@@ -363,6 +364,16 @@ def create_reservation():
             body.get("name", "Guest"), body.get("phone", ""), body.get("email", ""))
         customer_id = customer["id"]
 
+    # Fair use is a shopfront policy, not an inventory rule, so it is enforced
+    # here rather than inside reservations.create(): staff placing a hold at
+    # the counter are doing the store's own work and are not rationed by it.
+    from api.auth import is_staff
+    if not is_staff():
+        try:
+            holds.check(customer_id, variant_id)
+        except holds.HoldLimitReached as err:
+            return jsonify(error=str(err), reason="hold_limit", quota=err.quota), 429
+
     result = reservations.create(
         variant_id=variant_id,
         customer_id=customer_id,
@@ -400,20 +411,55 @@ def get_reservation_by_code(code):
     return jsonify(row)
 
 
+def _qr_svg(payload):
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+
+    img = qrcode.make(payload, image_factory=SvgPathImage, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    buf.seek(0)
+    return send_file(buf, mimetype="image/svg+xml")
+
+
 @api_bp.get("/reservations/<int:reservation_id>/qr.svg")
 def reservation_qr(reservation_id):
     row = reservations.get(reservation_id)
     if not row:
         return jsonify(error="reservation not found"), 404
+    return _qr_svg(row["code"])
 
-    import qrcode
-    from qrcode.image.svg import SvgPathImage
 
-    img = qrcode.make(row["code"], image_factory=SvgPathImage, box_size=10, border=2)
-    buf = io.BytesIO()
-    img.save(buf)
-    buf.seek(0)
-    return send_file(buf, mimetype="image/svg+xml")
+# ---------- Hold allowance ----------
+
+@api_bp.get("/customers/<int:customer_id>/hold-quota")
+def hold_quota(customer_id):
+    return jsonify(holds.quota(customer_id))
+
+
+@api_bp.get("/holds/pass.qr.svg")
+def hold_pass_qr():
+    """The code a shopper scans to buy more allowance.
+
+    Rendered from config, so pointing HOLD_PASS_QR_PAYLOAD at the store's real
+    payment string turns this into a live QR without touching any code.
+    """
+    return _qr_svg(config.HOLD_PASS_QR_PAYLOAD)
+
+
+@api_bp.post("/customers/<int:customer_id>/hold-pass")
+def buy_hold_pass(customer_id):
+    """Grant the extra allowance a pass buys.
+
+    In the demo this is the button under the QR, because nothing is watching
+    for a payment to land. Against a real gateway the webhook calls it instead
+    and this route goes away -- which is why the granting lives in the service
+    and not in here.
+    """
+    if not customers.get(customer_id):
+        return jsonify(error="customer not found"), 404
+    body = _body()
+    return jsonify(holds.grant_pass(customer_id, body.get("reference", "demo"))), 201
 
 
 @api_bp.post("/reservations/<int:reservation_id>/cancel")
