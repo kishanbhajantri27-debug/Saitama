@@ -5,7 +5,7 @@
 // stale-while-revalidate, so without a new name an already-installed app
 // serves the previous version once more before picking the update up; a new
 // name makes install fetch a fresh shell and activate drop the old one.
-const CACHE = 'showcase-v5';
+const CACHE = 'showcase-v6';
 
 const SHELL = [
   '/',

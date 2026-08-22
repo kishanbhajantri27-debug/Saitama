@@ -71,8 +71,19 @@ export function sheet(innerHtml, { onMount } = {}) {
 
   const panel = bg.querySelector('.sheet');
   if (onMount) onMount(panel, close);
-  const focusable = panel.querySelector('input, select, button');
-  if (focusable) setTimeout(() => focusable.focus(), 60);
+
+  // Focus something to fill in, but never a button. Autofocusing one arms it:
+  // a focused button is activated by Enter or Space, so a single stray
+  // keypress could confirm -- or pay -- before the sheet had even been read.
+  // With no field, the panel itself takes focus, which still gives the
+  // keyboard somewhere to Tab and Escape from.
+  const field = panel.querySelector('input, select, textarea');
+  if (field) {
+    setTimeout(() => field.focus(), 60);
+  } else {
+    panel.setAttribute('tabindex', '-1');
+    setTimeout(() => panel.focus(), 60);
+  }
   return { close, panel };
 }
 
