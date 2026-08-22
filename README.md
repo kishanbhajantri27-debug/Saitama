@@ -128,11 +128,13 @@ the picture.
 python -m pytest tests/ -q
 ```
 
-252 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness, secret redaction, login rate limiting, the parent-platform catalogue push/inventory pull and its isolation from staff sessions, local product/variant create and edit (including photo save/keep/clear semantics), plus regressions pinning the stock arithmetic, reservation lifecycle and search.
+274 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness, secret redaction, login rate limiting, the parent-platform catalogue push/inventory pull and its isolation from staff sessions, local product/variant create and edit (including photo save/keep/clear semantics), plus regressions pinning the stock arithmetic, reservation lifecycle and search, and the hold allowance -- what spends it, what deliberately does not, the three-days-running warning and the pass that extends a day.
 
 Demo data seeds itself on first boot: 8 products, 18 variants with SKUs and barcodes, stock at varied ages, customers, live reservations and a week of past sales. Delete `data/store.db` to start over.
 
 Optional `.env` (see `.env.example`): `PORT`, `STORE_ID`, `RESERVATION_MINUTES`, `DEMO_MODE`, `TRUST_PROXY`, `DEMO_*_PASSWORD`, and SMTP settings for back-in-stock emails.
+
+Hold fair-use is tunable the same way: `HOLD_TYPES_PER_DAY`, `HOLD_REPEAT_STREAK_DAYS`, `HOLD_PASS_EXTRA_TYPES`, `HOLD_PASS_PRICE`, and `HOLD_PASS_QR_PAYLOAD` — any payment string; setting it replaces the built-in placeholder QR and drops its DEMO label. Keep a real one in `.env`, never in `config.py`: `.env` is gitignored and a payment handle is not something to commit.
 
 ## Layout
 
@@ -155,6 +157,8 @@ public/manifest.webmanifest, public/sw.js, public/icons/   installable-app plumb
 - `inventory` holds `on_hand` and `reserved` per variant per branch. **Available = on_hand − reserved.**
 - **A reservation holds stock immediately**, not when staff accept it. Otherwise two customers could reserve the last unit. Completing a pickup is what finally removes it from `on_hand`.
 - Rejecting, cancelling or expiring a reservation releases the hold.
+- **Holds are rationed: five product types per shopper per day** (`services/holds.py`). A hold costs the shopper nothing but takes a unit off the shelf for an hour, so the allowance is spent on *distinct types* — re-holding the same item is free, quantity is not counted, and cancelling does not refund the slot (or the cap would be avoidable by holding and cancelling in a loop). Usage is counted from `reservations` rather than kept as a total, so it cannot drift from its own history. Enforced at the route, not in `reservations.create()`: it is a shopfront policy, and staff placing a hold at the counter are not rationed by it.
+- Filling the allowance **three days running** warns the shopper that charges may apply. A live streak, not a tally over a window — one quiet day ends it. Running out offers a payment QR (`HOLD_PASS_QR_PAYLOAD`) that grants one more allowance for the day; nothing verifies the payment, so the button under it stands in for a gateway webhook calling `holds.grant_pass()`.
 - Every change writes to `inventory_movements`, which is append-only — the dashboard reads from those events rather than from a running total, so any number can be traced to what caused it.
 - **Freshness travels with every count.** A quantity is only as good as when it was taken, so the age is shown everywhere and anything older than 3 hours is flagged as possibly outdated.
 

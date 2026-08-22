@@ -17,6 +17,8 @@ Usage is counted from the reservations table rather than from a running total,
 so a cancelled hold, a rebuilt database or a hand-edited row can never leave
 the counter disagreeing with the history it came from.
 """
+from datetime import date, timedelta
+
 import config
 import db
 
@@ -75,24 +77,44 @@ def extra_allowance(customer_id, day=None):
     return row["n"] if row else 0
 
 
-def capped_days(customer_id):
-    """Recent days on which the shopper used up the base allowance.
+def capped_streak(customer_id):
+    """Consecutive days, up to and including today, that the shopper filled.
 
-    Counted against the base rather than the extended limit: someone who buys
-    a pass has already settled up for that day, and dunning them for it again
-    would be talking out of both sides of our mouth.
+    A live run, not a tally over a window: filling the allowance on Monday and
+    Wednesday but not Tuesday is somebody shopping, whereas three days without
+    a break is somebody using holds as storage. A single quiet day ends it.
+
+    Measured against the base allowance rather than the extended one. Somebody
+    who bought a pass has already settled up for that day, and counting it
+    against them as well would be talking out of both sides of our mouth.
     """
     rows = db.query(
         """SELECT date(r.created_at) AS day, COUNT(DISTINCT v.product_id) AS n
            FROM reservations r
            JOIN product_variants v ON v.id = r.variant_id
            WHERE r.customer_id = ?
-             AND date(r.created_at) > date('now', ?)
            GROUP BY day
-           HAVING n >= ?""",
-        (customer_id, f"-{config.HOLD_REPEAT_WINDOW_DAYS} days", config.HOLD_TYPES_PER_DAY),
+           HAVING n >= ?
+           ORDER BY day DESC""",
+        (customer_id, config.HOLD_TYPES_PER_DAY),
     )
-    return [r["day"] for r in rows]
+    full = {date.fromisoformat(r["day"]) for r in rows}
+    if not full:
+        return []
+
+    # Today may not be full yet, so a run ending yesterday is still live -- it
+    # is what lets the warning appear before the third day is spent rather than
+    # only after. Anything older than that has already been broken by a gap.
+    today = date.fromisoformat(_today())
+    cursor = today if today in full else today - timedelta(days=1)
+    if cursor not in full:
+        return []
+
+    streak = []
+    while cursor in full:
+        streak.append(cursor.isoformat())
+        cursor -= timedelta(days=1)
+    return list(reversed(streak))
 
 
 def quota(customer_id):
@@ -104,9 +126,8 @@ def quota(customer_id):
     used = types_used(customer_id, day)
     remaining = max(0, limit - used)
 
-    repeats = capped_days(customer_id)
-    # Today only counts towards the habit once it is actually full.
-    warn = len(repeats) >= config.HOLD_REPEAT_DAYS
+    streak = capped_streak(customer_id)
+    warn = len(streak) >= config.HOLD_REPEAT_STREAK_DAYS
 
     if remaining:
         message = f"{remaining} of {limit} item types left to hold today."
@@ -124,14 +145,14 @@ def quota(customer_id):
         "remaining": remaining,
         "hold_minutes": config.RESERVATION_MINUTES,
         "product_ids": sorted(held_product_ids(customer_id, day)),
-        "capped_days": repeats,
-        "capped_day_count": len(repeats),
-        "repeat_window_days": config.HOLD_REPEAT_WINDOW_DAYS,
+        "capped_days": streak,
+        "streak_days": len(streak),
+        "streak_limit": config.HOLD_REPEAT_STREAK_DAYS,
         "charges_warning": warn,
         "charges_message": (
-            f"You have used the full hold limit on {len(repeats)} of the last "
-            f"{config.HOLD_REPEAT_WINDOW_DAYS} days. Holding stock this often keeps it off the "
-            f"shelf for other shoppers, so the store may start applying a charge for it."
+            f"You have used the full hold limit {len(streak)} days in a row. Holding stock "
+            f"this often keeps it off the shelf for other shoppers, so the store may start "
+            f"applying a charge for it."
         ) if warn else "",
         "message": message,
         "pass_price": config.HOLD_PASS_PRICE,

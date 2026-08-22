@@ -89,42 +89,83 @@ class TestDailyAllowance:
         assert holds.quota(other["id"])["remaining"] == 5
 
 
-class TestRepeatWarning:
-    def _fill_day(self, customer, variants, days_ago):
-        """Backdate a full day's worth of holds."""
-        for variant in variants:
-            reservations.create(variant["id"], customer["id"], 1)
+def _fill_day(customer, variants, days_ago=0):
+    """A full day's worth of holds, optionally backdated.
+
+    The expiry moves with the creation date, so an old day's holds lapse and
+    give their stock back the way real ones would -- otherwise repeatedly
+    filling the same five products just runs the shelf empty.
+    """
+    for variant in variants:
+        reservations.create(variant["id"], customer["id"], 1)
+    if days_ago:
         db.execute(
-            """UPDATE reservations SET created_at = datetime('now', ?)
+            """UPDATE reservations
+               SET created_at = datetime('now', ?), expires_at = datetime('now', ?)
                WHERE customer_id = ? AND date(created_at) = date('now')""",
-            (f"-{days_ago} days", customer["id"]),
+            (f"-{days_ago} days", f"-{days_ago} days", customer["id"]),
         )
+        reservations.expire_due()
+
+
+class TestRepeatWarning:
+    """Three days straight, not three days out of a window."""
 
     def test_one_full_day_says_nothing(self, a_customer):
-        for variant in _variants(5):
-            reservations.create(variant["id"], a_customer["id"], 1)
+        _fill_day(a_customer, _variants(5))
         assert holds.quota(a_customer["id"])["charges_warning"] is False
 
-    def test_a_habit_warns_about_charges(self, a_customer):
+    def test_two_days_running_says_nothing_yet(self, a_customer):
         picks = _variants(5)
-        for days_ago in (1, 2):
-            self._fill_day(a_customer, picks, days_ago)
-        for variant in picks:
-            reservations.create(variant["id"], a_customer["id"], 1)
+        _fill_day(a_customer, picks, 1)
+        _fill_day(a_customer, picks)
 
         quota = holds.quota(a_customer["id"])
-        assert quota["capped_day_count"] == 3
-        assert quota["charges_warning"] is True
-        assert "charge" in quota["charges_message"].lower()
+        assert quota["streak_days"] == 2
+        assert quota["charges_warning"] is False
 
-    def test_old_days_fall_out_of_the_window(self, a_customer):
+    def test_three_days_running_warns_about_charges(self, a_customer):
         picks = _variants(5)
-        for days_ago in (30, 40):
-            self._fill_day(a_customer, picks, days_ago)
-        for variant in picks:
-            reservations.create(variant["id"], a_customer["id"], 1)
+        for days_ago in (2, 1):
+            _fill_day(a_customer, picks, days_ago)
+        _fill_day(a_customer, picks)
 
-        assert holds.quota(a_customer["id"])["capped_day_count"] == 1
+        quota = holds.quota(a_customer["id"])
+        assert quota["streak_days"] == 3
+        assert quota["charges_warning"] is True
+        assert "3 days in a row" in quota["charges_message"]
+
+    def test_a_quiet_day_breaks_the_run(self, a_customer):
+        """Monday and Wednesday but not Tuesday is shopping, not storage."""
+        picks = _variants(5)
+        for days_ago in (4, 3, 1):      # nothing on day 2
+            _fill_day(a_customer, picks, days_ago)
+        _fill_day(a_customer, picks)
+
+        quota = holds.quota(a_customer["id"])
+        assert quota["streak_days"] == 2
+        assert quota["charges_warning"] is False
+
+    def test_a_run_ending_yesterday_still_counts(self, a_customer):
+        """So the warning can appear before the shopper spends day four."""
+        picks = _variants(5)
+        for days_ago in (3, 2, 1):
+            _fill_day(a_customer, picks, days_ago)
+
+        quota = holds.quota(a_customer["id"])
+        assert quota["used"] == 0           # nothing held today yet
+        assert quota["streak_days"] == 3
+        assert quota["charges_warning"] is True
+
+    def test_a_stale_run_is_not_live(self, a_customer):
+        """Three days straight last month is not a habit today."""
+        picks = _variants(5)
+        for days_ago in (12, 11, 10):
+            _fill_day(a_customer, picks, days_ago)
+
+        quota = holds.quota(a_customer["id"])
+        assert quota["streak_days"] == 0
+        assert quota["charges_warning"] is False
 
 
 class TestHoldPass:
@@ -145,10 +186,9 @@ class TestHoldPass:
     def test_a_pass_does_not_silence_the_charges_warning(self, a_customer):
         """Paying for today does not un-say that this is becoming a habit."""
         picks = _variants(5)
-        for days_ago in (1, 2):
-            TestRepeatWarning()._fill_day(a_customer, picks, days_ago)
-        for variant in picks:
-            reservations.create(variant["id"], a_customer["id"], 1)
+        for days_ago in (2, 1):
+            _fill_day(a_customer, picks, days_ago)
+        _fill_day(a_customer, picks)
         holds.grant_pass(a_customer["id"], "demo")
 
         assert holds.quota(a_customer["id"])["charges_warning"] is True
@@ -167,7 +207,6 @@ class TestOverTheApi:
         body = res.get_json()
         assert body["reason"] == "hold_limit"
         assert body["quota"]["remaining"] == 0
-        assert body["quota"]["pass_qr_is_demo"] is True
 
     def test_staff_are_not_rationed(self, client, a_customer, staff_headers):
         """A hold placed at the counter is the store's own work."""
@@ -206,6 +245,23 @@ class TestOverTheApi:
         assert res.status_code == 200
         assert res.mimetype == "image/svg+xml"
         assert b"<svg" in res.data
+
+    def test_the_qr_follows_the_configured_payload(self, client, monkeypatch):
+        """Two different payment strings must not produce the same code."""
+        monkeypatch.setattr(config, "HOLD_PASS_QR_PAYLOAD", "upi://pay?pa=one@bank")
+        first = client.get("/api/holds/pass.qr.svg").data
+        monkeypatch.setattr(config, "HOLD_PASS_QR_PAYLOAD", "upi://pay?pa=two@bank")
+        assert client.get("/api/holds/pass.qr.svg").data != first
+
+    def test_the_demo_label_tracks_the_placeholder(self, client, a_customer, monkeypatch):
+        """Setting a real payment string must take the DEMO badge off with it."""
+        monkeypatch.setattr(config, "HOLD_PASS_QR_IS_DEMO", False)
+        live = client.get(f"/api/customers/{a_customer['id']}/hold-quota").get_json()
+        assert live["pass_qr_is_demo"] is False
+
+        monkeypatch.setattr(config, "HOLD_PASS_QR_IS_DEMO", True)
+        placeholder = client.get(f"/api/customers/{a_customer['id']}/hold-quota").get_json()
+        assert placeholder["pass_qr_is_demo"] is True
 
     def test_config_publishes_the_limit(self, client):
         body = client.get("/api/config").get_json()

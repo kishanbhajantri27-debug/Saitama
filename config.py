@@ -23,11 +23,14 @@ RESERVATION_MINUTES = int(os.environ.get("RESERVATION_MINUTES") or 60)
 # the allowance down.
 HOLD_TYPES_PER_DAY = int(os.environ.get("HOLD_TYPES_PER_DAY") or 5)
 
-# Filling the allowance once is a busy shopping day. Filling it most days is a
-# habit the store may want to charge for -- so the shopper is told that while
-# it is still a warning, rather than being surprised by a bill later.
-HOLD_REPEAT_WINDOW_DAYS = int(os.environ.get("HOLD_REPEAT_WINDOW_DAYS") or 7)
-HOLD_REPEAT_DAYS = int(os.environ.get("HOLD_REPEAT_DAYS") or 3)
+# Filling the allowance once is a busy shopping day. Filling it three days
+# running is a habit the store may want to charge for -- so the shopper is told
+# while it is still a warning, rather than being surprised by a bill later.
+#
+# Counted as a live streak rather than as days-out-of-a-window: a shopper who
+# fills it Monday, skips Tuesday and fills it Wednesday is shopping, not
+# parking stock, and should not be dunned for it.
+HOLD_REPEAT_STREAK_DAYS = int(os.environ.get("HOLD_REPEAT_STREAK_DAYS") or 3)
 
 # What one pass buys: a second allowance for the rest of the same day.
 HOLD_PASS_EXTRA_TYPES = int(os.environ.get("HOLD_PASS_EXTRA_TYPES") or 5)
