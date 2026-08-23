@@ -41,7 +41,7 @@ STORE = {
     "rating": 4.6,
     "city": "Bengaluru",
     "address": "12 MG Road, Bengaluru 560001",
-    "phone": "+91 98765 43210",
+    "phone": "+91 80733 29699",
     "email": "hello@cmrstore.example",
     "opens_at": "09:30",
     "closes_at": "21:30",
