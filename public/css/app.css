@@ -1039,7 +1039,14 @@ tbody tr:hover { background: var(--surface-2); }
   .hero-banner { padding: 34px 30px; gap: 26px; }
   .hero-text h1 { font-size: 2.4rem; }
   .hero-text p { max-width: none; }
-  .hero-cta .btn { flex: 1; justify-content: center; }
+  /* Side by side, these two buttons carry very different amounts of text --
+     equal-width columns forced "Check a shopping list" onto three lines
+     while "Shop now" stayed on one, so the pair read as mismatched and
+     broken rather than as two options. Stacked and full width, both are
+     always one line and the same height: the same pattern this app already
+     uses for Add to basket / Hold for 1 hour. */
+  .hero-cta { flex-direction: column; }
+  .hero-cta .btn { justify-content: center; }
   .hero-shelf { grid-template-columns: repeat(6, 1fr); gap: 9px; }
 }
 
@@ -1048,7 +1055,6 @@ tbody tr:hover { background: var(--surface-2); }
   .hero-text h1 { font-size: 2rem; }
   .hero-text p { font-size: .92rem; max-width: none; }
   .hero-cta { margin-top: 18px; }
-  .hero-cta .btn { flex: 1; justify-content: center; }
   .hero-shelf { width: 100%; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .hero-jar:nth-child(n+5) { display: none; }
 
@@ -1067,7 +1073,6 @@ tbody tr:hover { background: var(--surface-2); }
 
 @media (max-width: 400px) {
   .hero-text h1 { font-size: 1.75rem; }
-  .hero-cta { flex-direction: column; }
   .cat-grid { grid-template-columns: 1fr 1fr; }
 }
 
