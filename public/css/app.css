@@ -89,10 +89,30 @@ img { display: block; max-width: 100%; }
 .sec-head .link { font-size: .84rem; font-weight: 700; white-space: nowrap; }
 .sec-head .link:hover { text-decoration: underline; }
 
+/* ============ icons ============
+   Replaces the emoji this app used to render directly -- an emoji is drawn by
+   the OS, so the same screen carried a different glyph, weight and colour on
+   every device. These are plain vectors: identical everywhere. Sized with
+   width/height:1em so they drop straight into every place that used to size
+   an emoji glyph with font-size (.tabbar .ic, .thumb-default span, and so
+   on) -- none of those rules needed to change. */
+.icon {
+  width: 1em; height: 1em; display: inline-block; flex-shrink: 0;
+  vertical-align: -.14em;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
 /* ============ app bar ============ */
+/* The page is viewport-fit=cover, so installed on a phone it draws behind
+   the status bar -- there is no browser chrome up there to hold it off. The
+   inset keeps the title and the mode pill clear of the clock and the signal
+   icons; in a normal browser tab it resolves to 0 and nothing moves. */
 .appbar {
   position: sticky; top: 0; z-index: 40; background: var(--surface);
-  border-bottom: 1px solid var(--line); min-height: var(--header-h);
+  border-bottom: 1px solid var(--line);
+  min-height: calc(var(--header-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   display: flex; align-items: center;
 }
 .appbar .wrap { display: flex; align-items: center; gap: 14px; padding-block: 14px; }
@@ -533,7 +553,8 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 /* ============ landing ============ */
-.landing { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 28px 20px 40px; }
+.landing { min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+  padding: calc(28px + env(safe-area-inset-top)) 20px calc(40px + env(safe-area-inset-bottom)); }
 .landing .logo { width: 68px; height: 68px; border-radius: 20px; background: var(--accent); color: #fff;
   display: grid; place-items: center; font-size: 1.85rem; margin-bottom: 24px; box-shadow: var(--shadow-2); }
 .landing h1 { font-size: 2.1rem; letter-spacing: -.03em; }

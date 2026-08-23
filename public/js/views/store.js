@@ -4,6 +4,7 @@ import {
   barChart, confirmSheet, empty, errorBox, h, money, rankedBars,
   sheet, skeletonLines, statusLine, timeline, toast,
 } from '../ui.js';
+import { svgIcon } from '../icons.js';
 
 /* ---------- sign in ---------- */
 
@@ -11,15 +12,15 @@ import {
 // Tapping one asks the server for a demo session, which it grants only while
 // DEMO_MODE is on.
 const DEMO_ROLES = [
-  ['owner', '👑', 'Owner', 'Full access, including staff and reset'],
-  ['manager', '🧑‍💼', 'Manager', 'Stock-takes, rejections, analytics'],
-  ['staff', '🧑‍🔧', 'Staff', 'Counter work: stock moves and pickups'],
+  ['owner', svgIcon('crown'), 'Owner', 'Full access, including staff and reset'],
+  ['manager', svgIcon('bag'), 'Manager', 'Stock-takes, rejections, analytics'],
+  ['staff', svgIcon('wrench'), 'Staff', 'Counter work: stock moves and pickups'],
 ];
 
 export function staffLoginView(mount) {
   mount.innerHTML = `
     <div class="wrap landing">
-      <div class="logo">🏪</div>
+      <div class="logo">${svgIcon('store')}</div>
       <h1>Store sign-in</h1>
       <p class="lede">Manage inventory, reservations and sales for ${h(state.store?.name || 'this store')}.</p>
 
@@ -47,7 +48,7 @@ export function staffLoginView(mount) {
               <span style="color:var(--muted)">›</span>
             </button>`).join('')}
         </div>` : ''}
-      <button class="btn ghost block" id="back" style="margin-top:14px">← Back</button>
+      <button class="btn ghost block" id="back" style="margin-top:14px">${svgIcon('chevron-left')} Back</button>
     </div>`;
 
   const user = mount.querySelector('#user');
@@ -131,13 +132,13 @@ export async function dashboardView(mount) {
       <div class="sec">
         <div class="sec-head"><h2>Quick actions</h2></div>
         <div class="quickgrid">
-          <button class="quick" data-go="/store/scan"><span class="ic">📷</span>Scan</button>
-          <button class="quick" data-go="/store/inventory"><span class="ic">📦</span>Inventory</button>
-          <button class="quick" data-go="/store/reservations"><span class="ic">🎟️</span>Reservations</button>
-          ${may('analytics.view') ? '<button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>' : ''}
-          ${may('inventory.history.view') ? '<button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>' : ''}
-          ${may('audit.view') ? '<button class="quick" data-go="/store/audit"><span class="ic">🛡️</span>Audit</button>' : ''}
-          ${may('settings.view') ? '<button class="quick" data-go="/store/settings"><span class="ic">⚙️</span>Settings</button>' : ''}
+          <button class="quick" data-go="/store/scan"><span class="ic">${svgIcon('scan')}</span>Scan</button>
+          <button class="quick" data-go="/store/inventory"><span class="ic">${svgIcon('box')}</span>Inventory</button>
+          <button class="quick" data-go="/store/reservations"><span class="ic">${svgIcon('ticket')}</span>Reservations</button>
+          ${may('analytics.view') ? `<button class="quick" data-go="/store/analytics"><span class="ic">${svgIcon('chart-line')}</span>Sales</button>` : ''}
+          ${may('inventory.history.view') ? `<button class="quick" data-go="/store/history"><span class="ic">${svgIcon('clock')}</span>History</button>` : ''}
+          ${may('audit.view') ? `<button class="quick" data-go="/store/audit"><span class="ic">${svgIcon('shield')}</span>Audit</button>` : ''}
+          ${may('settings.view') ? `<button class="quick" data-go="/store/settings"><span class="ic">${svgIcon('gear')}</span>Settings</button>` : ''}
         </div>
       </div>
 
@@ -210,7 +211,7 @@ export async function reservationsView(mount) {
     try {
       const rows = await api.reservations({ status: filter });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '🎟️', title: `No ${filter === 'all' ? '' : filter} reservations`, body: 'New customer reservations land here.' });
+        list.innerHTML = empty({ icon: svgIcon('ticket'), title: `No ${filter === 'all' ? '' : filter} reservations`, body: 'New customer reservations land here.' });
         return;
       }
       list.innerHTML = `<div class="stack">${rows.map(card).join('')}</div>`;
@@ -294,10 +295,10 @@ export async function inventoryView(mount) {
         <h2>Inventory</h2>
         <div class="row" style="gap:8px">
           ${may('product.create') ? '<button class="btn sm" id="add">+ Add</button>' : ''}
-          <button class="btn sm soft" id="scan">📷 Scan</button>
+          <button class="btn sm soft" id="scan">${svgIcon('scan')} Scan</button>
         </div>
       </div>
-      <div class="searchbox"><span class="ic">🔍</span><input id="q" type="search" placeholder="Search name, SKU or barcode"></div>
+      <div class="searchbox"><span class="ic">${svgIcon('search')}</span><input id="q" type="search" placeholder="Search name, SKU or barcode"></div>
       <div class="chips" style="margin-top:10px" id="f"></div>
       <div class="row" style="margin-top:10px;gap:8px">
         <select class="input" id="sort" style="max-width:190px">
@@ -317,7 +318,7 @@ export async function inventoryView(mount) {
   const list = mount.querySelector('#list');
 
   const drawFilters = () => {
-    mount.querySelector('#f').innerHTML = [['all', 'All'], ['available', '🟢 In stock'], ['limited', '🟡 Low'], ['out', '🔴 Out']]
+    mount.querySelector('#f').innerHTML = [['all', 'All'], ['available', `${svgIcon('dot-ok')} In stock`], ['limited', `${svgIcon('dot-warn')} Low`], ['out', `${svgIcon('dot-bad')} Out`]]
       .map(([k, l]) => `<button class="chip ${status === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('');
     mount.querySelectorAll('[data-f]').forEach((b) => {
       b.onclick = () => { status = b.dataset.f; drawFilters(); load(); };
@@ -335,7 +336,7 @@ export async function inventoryView(mount) {
     try {
       const rows = await api.inventory({ q, status, sort });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '📦', title: 'Nothing matches', body: 'Try a different search or filter.' });
+        list.innerHTML = empty({ icon: svgIcon('box'), title: 'Nothing matches', body: 'Try a different search or filter.' });
         return;
       }
       list.innerHTML = `
@@ -464,11 +465,11 @@ export function openProductSheet(row, onDone) {
     <h3>${editing ? h(row.product_name) : 'Add a product'}</h3>
     <div class="row" style="gap:12px;align-items:center;margin-bottom:10px">
       <div id="photoPreview" style="width:64px;height:64px;border-radius:10px;overflow:hidden;background:var(--surface-2);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:1.4rem">
-        ${editing && row.image_url ? `<img src="${h(row.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '📦'}
+        ${editing && row.image_url ? `<img src="${h(row.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : svgIcon('box')}
       </div>
       <div style="flex:1">
         <label class="btn sm ghost" style="cursor:pointer;display:inline-block">
-          📷 ${editing && row.image_url ? 'Change photo' : 'Add photo'}
+          ${svgIcon('camera')} ${editing && row.image_url ? 'Change photo' : 'Add photo'}
           <input type="file" id="photo" accept="image/*" style="display:none">
         </label>
         ${editing && row.image_url ? '<button class="btn sm ghost" id="removePhoto" style="margin-left:6px">Remove</button>' : ''}
@@ -541,7 +542,7 @@ export function openProductSheet(row, onDone) {
       if (removeBtn) {
         removeBtn.onclick = () => {
           photoDataUrl = '';
-          preview.innerHTML = '📦';
+          preview.innerHTML = svgIcon('box');
           photoErr.textContent = '';
         };
       }
@@ -677,7 +678,7 @@ export async function scanView(mount) {
               ${v.image_url ? `<img src="${h(v.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ''}
             </div>
             <div style="flex:1;min-width:0">
-              <div style="font-weight:800">✅ ${h(v.product_name)}</div>
+              <div style="font-weight:800">${svgIcon('check-circle')} ${h(v.product_name)}</div>
               <div style="font-size:.8rem;color:var(--muted)">${h(v.label)} · ${h(v.sku)}</div>
               <div style="font-weight:800;margin-top:4px">${money(v.price)}</div>
             </div>
@@ -694,7 +695,7 @@ export async function scanView(mount) {
       out.querySelector('#view').onclick = () => navigate(`/p/${v.product_id}`);
     } catch (err) {
       out.innerHTML = err.status === 404
-        ? empty({ icon: '🤷', title: 'No product matches that code', body: `Nothing in this store uses "${code}".` })
+        ? empty({ icon: svgIcon('question'), title: 'No product matches that code', body: `Nothing in this store uses "${code}".` })
         : errorBox(err.message);
     }
   }
@@ -725,7 +726,7 @@ export async function scanView(mount) {
       };
     } catch (err) {
       out.innerHTML = err.status === 404
-        ? empty({ icon: '🎟️', title: 'No reservation with that code', body: 'Check the code and try again.' })
+        ? empty({ icon: svgIcon('ticket'), title: 'No reservation with that code', body: 'Check the code and try again.' })
         : errorBox(err.message);
     }
   }
@@ -870,12 +871,12 @@ export async function auditView(mount) {
     try {
       const rows = await api.auditLog(outcome ? { outcome, limit: 100 } : { limit: 100 });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '🛡️', title: 'Nothing logged yet' });
+        list.innerHTML = empty({ icon: svgIcon('shield'), title: 'Nothing logged yet' });
         return;
       }
       list.innerHTML = `<div class="card pad"><ul class="tl">${rows.map((r) => `
         <li>
-          <span class="tl-ic">${r.outcome === 'denied' ? '⛔' : '✅'}</span>
+          <span class="tl-ic">${r.outcome === 'denied' ? svgIcon('blocked') : svgIcon('check-circle')}</span>
           <span class="tl-body">
             <span class="tl-top">
               <span class="tl-label">${h(r.action)}</span>
@@ -920,7 +921,7 @@ export async function analyticsView(mount) {
 
       <div class="sec">
         <div class="sec-head"><h2>Top products</h2></div>
-        <div class="card pad">${o.top_products.length ? rankedBars(o.top_products) : empty({ icon: '📊', title: 'No sales yet' })}</div>
+        <div class="card pad">${o.top_products.length ? rankedBars(o.top_products) : empty({ icon: svgIcon('chart-bar'), title: 'No sales yet' })}</div>
       </div>
 
       <div class="sec">
@@ -930,7 +931,7 @@ export async function analyticsView(mount) {
             <div class="thumb">${r.image_url ? `<img src="${h(r.image_url)}" alt="">` : ''}</div>
             <div class="meta"><span class="name">${h(r.product_name)}</span><span class="sku">${h(r.sku)}</span></div>
             ${statusLine(r)}
-          </div>`).join('') : empty({ icon: '✅', title: 'Everything is well stocked' })}</div>
+          </div>`).join('') : empty({ icon: svgIcon('check-circle'), title: 'Everything is well stocked' })}</div>
       </div>
 
       <div class="sec">
@@ -958,9 +959,9 @@ export async function analyticsView(mount) {
 // SHOWCASE_TYPES). A type the client has never heard of still shows, just
 // under its raw name, so a newer server never breaks an older client here.
 const TYPE_INFO = {
-  general: { icon: '🛍️', label: 'General store', blurb: 'A flat product grid — the default showcase.' },
-  grocery: { icon: '🛒', label: 'Grocery', blurb: 'Products grouped into aisles by category.' },
-  mall: { icon: '🏬', label: 'Mall', blurb: 'Products grouped into wings by brand/shop.' },
+  general: { icon: svgIcon('bag'), label: 'General store', blurb: 'A flat product grid — the default showcase.' },
+  grocery: { icon: svgIcon('cart'), label: 'Grocery', blurb: 'Products grouped into aisles by category.' },
+  mall: { icon: svgIcon('mall'), label: 'Mall', blurb: 'Products grouped into wings by brand/shop.' },
 };
 
 export async function settingsView(mount) {
@@ -1031,7 +1032,7 @@ export async function settingsView(mount) {
   let selectedType = s.type;
   const drawTypes = () => {
     body.querySelector('#types').innerHTML = types.map((t) => {
-      const info = TYPE_INFO[t] || { icon: '❔', label: t, blurb: '' };
+      const info = TYPE_INFO[t] || { icon: svgIcon('question'), label: t, blurb: '' };
       return `
         <button class="modecard ${selectedType === t ? 'on' : ''}" data-type="${h(t)}" ${editable ? '' : 'disabled'}
                 style="${selectedType === t ? 'border-color:var(--accent);background:var(--info-bg)' : ''}">
@@ -1040,7 +1041,7 @@ export async function settingsView(mount) {
             <span class="t">${h(info.label)}</span>
             <span class="d">${h(info.blurb)}</span>
           </span>
-          ${selectedType === t ? '<span style="color:var(--accent);font-weight:800">✓</span>' : ''}
+          ${selectedType === t ? `<span style="color:var(--accent);font-weight:800">${svgIcon('check')}</span>` : ''}
         </button>`;
     }).join('');
     if (editable) {

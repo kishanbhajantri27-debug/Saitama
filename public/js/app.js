@@ -5,6 +5,7 @@ import {
   may, resolve, restoreSession, route, setMode, startRouter, state,
 } from './state.js';
 import { confirmSheet, errorBox, h, initTheme, setCurrency, toast, toggleTheme } from './ui.js';
+import { svgIcon } from './icons.js';
 import * as C from './views/customer.js';
 import * as S from './views/store.js';
 
@@ -58,29 +59,29 @@ if ('serviceWorker' in navigator) {
 // design. The centre button is not a route -- it opens the code lookup
 // sheet over whatever screen you are on.
 const CUSTOMER_TABS = [
-  ['/home', '🏠', 'Home'],
-  ['/categories', '🗂️', 'Aisles'],
-  ['scan', '❇️', 'Scan'],
-  ['/cart', '🧺', 'Basket'],
-  ['/reservations', '🎟️', 'Orders'],
+  ['/home', svgIcon('home'), 'Home'],
+  ['/categories', svgIcon('folder'), 'Aisles'],
+  ['scan', svgIcon('scan'), 'Scan'],
+  ['/cart', svgIcon('basket'), 'Basket'],
+  ['/reservations', svgIcon('ticket'), 'Orders'],
 ];
 
 const SIDEBAR_LINKS = [
-  ['/home', '🏠', 'Home'],
-  ['/showcase', '🗂️', 'Showcase'],
-  ['/search/', '🔍', 'Search'],
-  ['/reservations', '🎟️', 'My orders'],
-  ['/wishlist', '❤️', 'Wishlist'],
-  ['/recently-viewed', '🕓', 'Recently viewed'],
-  ['/store-info', '🏪', 'Store info'],
+  ['/home', svgIcon('home'), 'Home'],
+  ['/showcase', svgIcon('folder'), 'Showcase'],
+  ['/search/', svgIcon('search'), 'Search'],
+  ['/reservations', svgIcon('ticket'), 'My orders'],
+  ['/wishlist', svgIcon('heart-outline'), 'Wishlist'],
+  ['/recently-viewed', svgIcon('clock'), 'Recently viewed'],
+  ['/store-info', svgIcon('store'), 'Store info'],
 ];
 
 const STORE_TABS = [
-  ['/store/dashboard', '📊', 'Dashboard'],
-  ['/store/inventory', '📦', 'Inventory'],
-  ['/store/scan', '📷', 'Scan'],
-  ['/store/reservations', '🎟️', 'Requests'],
-  ['/store/analytics', '📈', 'Sales'],
+  ['/store/dashboard', svgIcon('chart-bar'), 'Dashboard'],
+  ['/store/inventory', svgIcon('box'), 'Inventory'],
+  ['/store/scan', svgIcon('scan'), 'Scan'],
+  ['/store/reservations', svgIcon('ticket'), 'Requests'],
+  ['/store/analytics', svgIcon('chart-line'), 'Sales'],
 ];
 
 function shell({ title, sub, back = false, mode }) {
@@ -91,9 +92,9 @@ function shell({ title, sub, back = false, mode }) {
     <header class="appbar">
       <div class="wrap">
         ${mode === 'customer' && !back
-          ? '<button class="iconbtn" id="menu" aria-label="Open menu">☰</button>'
+          ? `<button class="iconbtn" id="menu" aria-label="Open menu">${svgIcon('menu')}</button>`
           : ''}
-        ${back ? '<button class="iconbtn" id="back" aria-label="Back">←</button>' : ''}
+        ${back ? `<button class="iconbtn" id="back" aria-label="Back">${svgIcon('chevron-left')}</button>` : ''}
         <div class="appbar-title">
           <h1>${h(title)}</h1>
           ${sub ? `<div class="sub">${h(sub)}</div>` : ''}
@@ -101,11 +102,11 @@ function shell({ title, sub, back = false, mode }) {
         ${mode === 'customer' ? headerSearchAndActions() : ''}
         <span class="modepill"><span class="mode-full">${
           mode === 'store' ? h(state.user?.role || 'Store') : 'Customer'} · </span>Demo</span>
-        <button class="iconbtn" id="theme" aria-label="Toggle theme">◐</button>
+        <button class="iconbtn" id="theme" aria-label="Toggle theme">${svgIcon('contrast')}</button>
         ${mode === 'store' && may('demo.reset')
-          ? '<button class="iconbtn" id="reset" aria-label="Reset demo" title="Reset demo data">↺</button>'
+          ? `<button class="iconbtn" id="reset" aria-label="Reset demo" title="Reset demo data">${svgIcon('refresh')}</button>`
           : ''}
-        <button class="iconbtn" id="exit" aria-label="Switch mode">⇄</button>
+        <button class="iconbtn" id="exit" aria-label="Switch mode">${svgIcon('swap')}</button>
       </div>
     </header>
     <main class="screen" id="screen"></main>
@@ -135,24 +136,24 @@ function shell({ title, sub, back = false, mode }) {
 function headerSearchAndActions() {
   return `
     <div class="header-search desktop-only">
-      <span class="ic">🔍</span>
+      <span class="ic">${svgIcon('search')}</span>
       <input id="hsearch" type="search" placeholder="Search ${h(state.store?.name ? 'at ' + state.store.name : 'products')}…" autocomplete="off">
     </div>
     <div class="header-actions desktop-only">
       <button class="header-action" data-to="/wishlist" aria-label="Wishlist">
-        <span class="ic">🤍</span>Wishlist
+        <span class="ic">${svgIcon('heart-outline')}</span>Wishlist
         ${state.wishlistIds.size ? `<span class="count-badge">${state.wishlistIds.size}</span>` : ''}
       </button>
       <button class="header-action" data-to="/cart" aria-label="Your basket">
-        <span class="ic">🧺</span>Basket
+        <span class="ic">${svgIcon('basket')}</span>Basket
         ${cart.count() ? `<span class="count-badge">${cart.count()}</span>` : ''}
       </button>
       <button class="header-action" data-to="/reservations" aria-label="Your orders">
-        <span class="ic">🎟️</span>Orders
+        <span class="ic">${svgIcon('ticket')}</span>Orders
         ${state.openReservations ? `<span class="count-badge">${state.openReservations}</span>` : ''}
       </button>
       <button class="header-account" data-to="/account">
-        <span class="avatar">👤</span>
+        <span class="avatar">${svgIcon('person')}</span>
         <span>
           <b>Hi, ${h(state.me?.name || 'there')}</b>
           <small>Guest · no account needed</small>
@@ -188,11 +189,11 @@ function sidebar(path) {
         <div class="drawer-head">
           <span class="drawer-logo">${TYPE_LOGO[state.store?.type] || TYPE_LOGO.general}</span>
           <span class="drawer-name">${h(state.store?.name || 'Store')}</span>
-          <button class="iconbtn" id="drawerClose" aria-label="Close menu">✕</button>
+          <button class="iconbtn" id="drawerClose" aria-label="Close menu">${svgIcon('close')}</button>
         </div>
 
         <nav class="drawer-nav">
-          ${[['/home', '🏠', 'Home'], ['/showcase', '🗂️', 'Showcase'], ['/search/', '🔍', 'Search']].map(link).join('')}
+          ${[['/home', svgIcon('home'), 'Home'], ['/showcase', svgIcon('folder'), 'Showcase'], ['/search/', svgIcon('search'), 'Search']].map(link).join('')}
           ${C.inAisleOrder(state.categories).map((c) => {
             const to = `/search/cat:${encodeURIComponent(c)}`;
             return `<button class="${isOn(to) ? 'on' : ''}" data-to="${to}">
@@ -204,11 +205,11 @@ function sidebar(path) {
         <div class="drawer-divider"></div>
         <nav class="drawer-nav">
           ${[
-            ['/cart', '🧺', 'My basket'],
-            ['/reservations', '🎟️', 'My orders'],
-            ['/wishlist', '❤️', 'Wishlist'],
-            ['/recently-viewed', '🕓', 'Recently viewed'],
-            ['/store-info', '🏪', 'Store info'],
+            ['/cart', svgIcon('basket'), 'My basket'],
+            ['/reservations', svgIcon('ticket'), 'My orders'],
+            ['/wishlist', svgIcon('heart-outline'), 'Wishlist'],
+            ['/recently-viewed', svgIcon('clock'), 'Recently viewed'],
+            ['/store-info', svgIcon('store'), 'Store info'],
           ].map(link).join('')}
         </nav>
 
@@ -217,7 +218,7 @@ function sidebar(path) {
             <b>Need help?</b>
             <small>${h(state.store?.hours_label || 'We are here during store hours')}</small>
             ${state.store?.phone
-              ? `<a class="btn ghost sm block" href="tel:${h(state.store.phone.replace(/\s/g, ''))}">📞 Contact us</a>`
+              ? `<a class="btn ghost sm block" href="tel:${h(state.store.phone.replace(/\s/g, ''))}">${svgIcon('phone')} Contact us</a>`
               : ''}
           </div>
         </div>
@@ -294,7 +295,7 @@ async function resetDemo() {
 
 /* ---------- landing ---------- */
 
-const TYPE_LOGO = { grocery: '🛒', mall: '🏬', general: '🛍️' };
+const TYPE_LOGO = { grocery: svgIcon('cart'), mall: svgIcon('mall'), general: svgIcon('bag') };
 
 function landing() {
   const logo = TYPE_LOGO[state.store?.type] || TYPE_LOGO.general;
@@ -306,7 +307,7 @@ function landing() {
 
       <div class="stack" style="margin-top:26px;gap:12px">
         <button class="modecard" data-mode="customer">
-          <span class="ic">🛒</span>
+          <span class="ic">${svgIcon('cart')}</span>
           <span style="flex:1">
             <span class="t">Continue as Customer</span>
             <span class="d">Search the shelf, check live stock, reserve an item</span>
@@ -314,7 +315,7 @@ function landing() {
           <span style="color:var(--muted)">›</span>
         </button>
         <button class="modecard" data-mode="store">
-          <span class="ic">🏪</span>
+          <span class="ic">${svgIcon('store')}</span>
           <span style="flex:1">
             <span class="t">Continue as Store Manager</span>
             <span class="d">Dashboard, inventory, reservations, scanner, sales</span>
@@ -323,7 +324,7 @@ function landing() {
         </button>
       </div>
 
-      <button class="btn ghost block" id="install" style="margin-top:14px;display:none">📲 Install app</button>
+      <button class="btn ghost block" id="install" style="margin-top:14px;display:none">${svgIcon('install')} Install app</button>
       <p class="demonote">Demo data only. No account, no payment, no real customer details.</p>
     </div>`;
 

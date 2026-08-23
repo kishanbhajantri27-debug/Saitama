@@ -5,6 +5,7 @@ import {
   confirmSheet, el, empty, errorBox, failureState, h, money, sheet,
   skeletonGrid, skeletonLines, staleWarning, statusLine, timeline, toast,
 } from '../ui.js';
+import { svgIcon } from '../icons.js';
 
 const SEARCH_IDEAS = ['Basmati rice', 'Cow ghee', 'Almonds', 'Toor dal', 'Fresh paneer'];
 
@@ -14,22 +15,22 @@ const SEARCH_IDEAS = ['Basmati rice', 'Cow ghee', 'Almonds', 'Toor dal', 'Fresh 
    box. This picks a category-appropriate emoji on a coloured tile instead
    of inventing a fake product photo. */
 const CATEGORY_ICONS = [
-  [/millet|pulse|dal|lentil|chana|moong|ragi/i, '🫘'],
-  [/grain|rice|wheat|atta|flour|poha/i, '🌾'],
-  [/nut|cashew|almond|raisin|walnut|dry ?fruit/i, '🥜'],
-  [/ghee|\boil\b/i, '🫙'],
-  [/milk|dairy|paneer|curd|butter/i, '🥛'],
-  [/spice|masala|turmeric|chilli|coriander/i, '🌶️'],
-  [/tea|coffee|beverage|juice|drink/i, '☕'],
-  [/organic|oats|honey|jaggery/i, '🍯'],
-  [/combo|hamper|bundle/i, '🎁'],
-  [/soap|detergent|dishwash|clean|household/i, '🧴'],
-  [/baby/i, '🍼'],
+  [/millet|pulse|dal|lentil|chana|moong|ragi/i, svgIcon('pulse')],
+  [/grain|rice|wheat|atta|flour|poha/i, svgIcon('grain')],
+  [/nut|cashew|almond|raisin|walnut|dry ?fruit/i, svgIcon('nut')],
+  [/ghee|\boil\b/i, svgIcon('jar')],
+  [/milk|dairy|paneer|curd|butter/i, svgIcon('milk')],
+  [/spice|masala|turmeric|chilli|coriander/i, svgIcon('chili')],
+  [/tea|coffee|beverage|juice|drink/i, svgIcon('coffee')],
+  [/organic|oats|honey|jaggery/i, svgIcon('honey')],
+  [/combo|hamper|bundle/i, svgIcon('gift')],
+  [/soap|detergent|dishwash|clean|household/i, svgIcon('bottle')],
+  [/baby/i, svgIcon('baby-bottle')],
 ];
 
 export function categoryIcon(name = '') {
   const hit = CATEGORY_ICONS.find(([re]) => re.test(name));
-  return hit ? hit[1] : '🏷️';
+  return hit ? hit[1] : svgIcon('tag');
 }
 
 /** A stable colour per product, but kept inside the showroom's own range:
@@ -261,22 +262,22 @@ export function productCard(p) {
     <div class="prod" data-product="${p.id}">
       <div class="thumb">
         ${img(p)}
-        <button class="heartbtn" data-heart="${p.id}" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? '❤️' : '🤍'}</button>
+        <button class="heartbtn" data-heart="${p.id}" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? svgIcon('heart-filled') : svgIcon('heart-outline')}</button>
       </div>
       <div class="body">
         ${p.brand ? `<span class="brand">${h(p.brand)}</span>` : ''}
         <span class="name">${h(p.name)}</span>
         ${variant?.label ? `<span class="qty">${h(variant.label)}</span>` : ''}
-        ${p.rating ? `<span class="rate"><span class="star">★</span>${p.rating} <span style="color:var(--muted);font-weight:600">(${p.rating_count})</span></span>` : ''}
+        ${p.rating ? `<span class="rate"><span class="star">${svgIcon('star')}</span>${p.rating} <span style="color:var(--muted);font-weight:600">(${p.rating_count})</span></span>` : ''}
         <span class="price">${money(p.price_from)}</span>
         ${statusLine({ ...p, status: p.status, available: p.available }, { showUnits: false })}
         ${lowLeft}
         ${held ? holdNote(held) : `
         <div class="cardactions">
           ${p.status === 'out'
-            ? `<button class="btn ghost block" data-notify="${p.id}">🔔 Tell me when it is back</button>`
+            ? `<button class="btn ghost block" data-notify="${p.id}">${svgIcon('bell')} Tell me when it is back</button>`
             : `<button class="btn block" data-add="${p.id}">Add to basket</button>
-               <button class="btn ghost block" data-hold="${p.id}">🔒 Hold for 1 hour</button>`}
+               <button class="btn ghost block" data-hold="${p.id}">${svgIcon('lock')} Hold for 1 hour</button>`}
         </div>`}
       </div>
     </div>`;
@@ -286,7 +287,7 @@ export function productCard(p) {
 function holdNote(reservation) {
   return `
     <div class="holdnote">
-      <span class="ic">🔒</span>
+      <span class="ic">${svgIcon('lock')}</span>
       <span>
         <b>Reserved for you</b>
         <span class="clock" data-until="${h(reservation.expires_at || '')}">${h(fallbackClock(reservation))}</span>
@@ -466,12 +467,12 @@ async function toggleWishlist(productId, heartNode) {
     if (saved) {
       await api.removeWishlist(state.me.id, productId);
       state.wishlistIds.delete(productId);
-      if (heartNode) heartNode.textContent = '🤍';
+      if (heartNode) heartNode.textContent = svgIcon('heart-outline');
       toast('Removed from wishlist');
     } else {
       await api.addWishlist(state.me.id, productId);
       state.wishlistIds.add(productId);
-      if (heartNode) heartNode.textContent = '❤️';
+      if (heartNode) heartNode.textContent = svgIcon('heart-filled');
       toast('Saved to wishlist', 'ok');
     }
   } catch (err) {
@@ -488,15 +489,15 @@ async function toggleWishlist(productId, heartNode) {
    genuine reservations, not a cart). The store's `type` only picks a
    cosmetic icon here; nothing about the layout branches on it. */
 
-const TYPE_ICON = { grocery: '🛒', mall: '🏬', general: '🛍️' };
+const TYPE_ICON = { grocery: svgIcon('cart'), mall: svgIcon('mall'), general: svgIcon('bag') };
 
 // Plain text, escaped at the point of use. Pre-escaping it here meant the
 // rail's h() escaped the ampersand a second time and printed the entity.
 const FEATURES = [
-  ['🌾', '100% natural', 'No preservatives added'],
-  ['📦', 'Hygienically packed', 'Sealed for your family'],
-  ['🟢', 'Live shelf counts', 'Real stock, not estimates'],
-  ['🔒', 'Hold & collect', 'Keep it aside for an hour'],
+  [svgIcon('grain'), '100% natural', 'No preservatives added'],
+  [svgIcon('box'), 'Hygienically packed', 'Sealed for your family'],
+  [svgIcon('dot-ok'), 'Live shelf counts', 'Real stock, not estimates'],
+  [svgIcon('lock'), 'Hold & collect', 'Keep it aside for an hour'],
 ];
 
 /* The aisles, in the order a shopper walks them. Each entry finds the real
@@ -504,13 +505,13 @@ const FEATURES = [
    them still gets its own bay at the end, so adding a category upstream
    never leaves products stranded off the shop floor. */
 const AISLES = [
-  [/grain|rice|wheat|atta|flour/i, '🌾', 'Everyday Grains'],
-  [/millet|pulse|dal|lentil/i, '🫘', 'Millets & Pulses'],
-  [/nut|dry ?fruit/i, '🥜', 'Dry Fruits & Nuts'],
-  [/milk|dairy/i, '🥛', 'Fresh Dairy'],
-  [/ghee|oil|butter/i, '🫙', 'Pure Ghee & Oils'],
-  [/spice|masala/i, '🌶️', 'Indian Spices'],
-  [/organic/i, '🌱', 'Organic Choices'],
+  [/grain|rice|wheat|atta|flour/i, svgIcon('grain'), 'Everyday Grains'],
+  [/millet|pulse|dal|lentil/i, svgIcon('pulse'), 'Millets & Pulses'],
+  [/nut|dry ?fruit/i, svgIcon('nut'), 'Dry Fruits & Nuts'],
+  [/milk|dairy/i, svgIcon('milk'), 'Fresh Dairy'],
+  [/ghee|oil|butter/i, svgIcon('jar'), 'Pure Ghee & Oils'],
+  [/spice|masala/i, svgIcon('chili'), 'Indian Spices'],
+  [/organic/i, svgIcon('leaf'), 'Organic Choices'],
 ];
 
 /* The themed runs of product down the page. Each one is only drawn if the
@@ -574,7 +575,7 @@ export async function homeView(mount) {
         </div>
 
         <div class="searchbox" style="margin-top:26px">
-          <span class="ic">🔍</span>
+          <span class="ic">${svgIcon('search')}</span>
           <input id="q" type="search" placeholder="Search for grains, dry fruits, milk products…" autocomplete="off">
         </div>
         <div class="chips" style="margin-top:12px" id="ideas">
@@ -656,12 +657,12 @@ function heroBanner(products) {
   return `
     <section class="hero-banner">
       <div class="hero-text">
-        <span class="hero-eyebrow">🌿 ${h(state.store?.city || 'Your neighbourhood store')}</span>
+        <span class="hero-eyebrow">${svgIcon('leaf')} ${h(state.store?.city || 'Your neighbourhood store')}</span>
         <h1>Pure Food.<br><span class="leaf">Better Life.</span></h1>
         <p>${h(state.store?.tagline || 'Quality grains, dry fruits and dairy, kept fresh and ready to collect.')}</p>
         <div class="hero-cta">
-          <button class="btn lg" id="shopnow">Shop now →</button>
-          <button class="btn lg ghost" id="check">✅ Check a shopping list</button>
+          <button class="btn lg" id="shopnow">Shop now ${svgIcon('chevron-right')}</button>
+          <button class="btn lg ghost" id="check">${svgIcon('check-circle')} Check a shopping list</button>
         </div>
       </div>
       ${picks.length ? `
@@ -749,17 +750,17 @@ function catalogBody(products, categories) {
   const byCategory = groupBy(products, (p) => p.category, 'Other');
 
   if (!products.length) {
-    return empty({ icon: '🧺', title: 'The shelves are being stocked', body: 'Check back once the store adds its first products.' });
+    return empty({ icon: svgIcon('basket'), title: 'The shelves are being stocked', body: 'Check back once the store adds its first products.' });
   }
 
   const collections = categories.length ? `
     <div class="sec">
       <div class="sec-head">
         <div>
-          <h2>🌿 Shop by collection</h2>
+          <h2>${svgIcon('leaf')} Shop by collection</h2>
           <div class="sub">Every aisle in the store, and what is on it today</div>
         </div>
-        <a class="link" href="#/categories">View all →</a>
+        <a class="link" href="#/categories">View all ${svgIcon('chevron-right')}</a>
       </div>
       <div class="cat-grid">${inAisleOrder(categories).map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>
     </div>` : '';
@@ -771,7 +772,7 @@ function catalogBody(products, categories) {
       ? products.filter((p) => s.match.test(`${p.category} ${p.name}`)).slice(0, 8)
       : s.pick(products);
     return shelf(s.title, s.sub, items,
-      s.match ? `<a class="link" href="#/showcase">View all →</a>` : '');
+      s.match ? `<a class="link" href="#/showcase">View all ${svgIcon('chevron-right')}</a>` : '');
   }).join('');
 
   return collections + runs;
@@ -790,7 +791,7 @@ function railBody(wishlist) {
       <div class="spotlight-body">
         <span class="k">Store spotlight</span>
         <h3>${h(s.name)}</h3>
-        <p>${h(s.city)} · ★ ${s.rating} · ${s.is_open ? 'Open now' : 'Closed'}</p>
+        <p>${h(s.city)} · ${svgIcon('star')} ${s.rating} · ${s.is_open ? 'Open now' : 'Closed'}</p>
         <button class="btn ghost sm block" id="storecard">Explore store</button>
       </div>
     </div>` : ''}
@@ -801,7 +802,7 @@ function railBody(wishlist) {
 
     <div class="card pad">
       <div class="sec-head" style="margin-bottom:${wishlist.length ? '10px' : '2px'}">
-        <h2 style="font-size:.92rem">❤️ Your wishlist</h2>
+        <h2 style="font-size:.92rem">${svgIcon('heart-filled')} Your wishlist</h2>
         <a class="link" href="#/wishlist">See all</a>
       </div>
       ${wishlist.length
@@ -812,7 +813,7 @@ function railBody(wishlist) {
     ${s?.phone ? `
     <div class="card pad">
       <h3 class="rail-title">Need help?</h3>
-      <a class="btn ghost block sm" style="margin-top:8px" href="tel:${h(s.phone.replace(/\s/g, ''))}">📞 Call the store</a>
+      <a class="btn ghost block sm" style="margin-top:8px" href="tel:${h(s.phone.replace(/\s/g, ''))}">${svgIcon('phone')} Call the store</a>
     </div>` : ''}`;
 }
 
@@ -859,7 +860,7 @@ export async function showcaseView(mount) {
       body.innerHTML = products.length
         ? `<div class="prodgrid">${products.map(productCard).join('')}</div>`
         : empty(NOTHING_MATCHED[filter]
-            || { icon: '🗂️', title: 'Nothing in the collection yet', body: 'Check back once the store adds items.' });
+            || { icon: svgIcon('folder'), title: 'Nothing in the collection yet', body: 'Check back once the store adds items.' });
 
       wireProductClicks(body);
     } catch (err) {
@@ -884,15 +885,15 @@ const section = (title, inner, link = '') => `
    it means "send no status at all". */
 const STOCK_FILTERS = [
   ['all', 'All'],
-  ['available', '🟢 In stock'],
-  ['limited', '🟡 Limited'],
-  ['out', '🔴 Out'],
+  ['available', `${svgIcon('dot-ok')} In stock`],
+  ['limited', `${svgIcon('dot-warn')} Limited`],
+  ['out', `${svgIcon('dot-bad')} Out`],
 ];
 
 const NOTHING_MATCHED = {
-  available: { icon: '🫙', title: 'Nothing in stock right now', body: 'Check back shortly, or look at the whole collection.' },
-  limited: { icon: '🟡', title: 'Nothing running low', body: 'Everything on the shelf is either well stocked or sold out.' },
-  out: { icon: '🎉', title: 'Nothing is sold out', body: 'Every item in the collection is on the shelf.' },
+  available: { icon: svgIcon('jar'), title: 'Nothing in stock right now', body: 'Check back shortly, or look at the whole collection.' },
+  limited: { icon: svgIcon('dot-warn'), title: 'Nothing running low', body: 'Everything on the shelf is either well stocked or sold out.' },
+  out: { icon: svgIcon('sparkle'), title: 'Nothing is sold out', body: 'Every item in the collection is on the shelf.' },
 };
 
 /** Renders the chip row into `host` and calls `onPick` when one is chosen. */
@@ -913,9 +914,9 @@ export async function searchView(mount, term = '') {
   mount.innerHTML = `
     <div class="wrap">
       <div style="padding:14px 0 0" class="searchbox">
-        <span class="ic">🔍</span>
+        <span class="ic">${svgIcon('search')}</span>
         <input id="q" type="search" placeholder="What are you looking for?" value="${h(initialQuery)}" autocomplete="off">
-        <button class="clr" id="clr" aria-label="Clear">✕</button>
+        <button class="clr" id="clr" aria-label="Clear">${svgIcon('close')}</button>
       </div>
       <div class="chips" style="margin-top:12px" id="filters"></div>
       <div id="count" style="font-size:.8rem;color:var(--muted);margin:10px 2px"></div>
@@ -960,7 +961,7 @@ export async function searchView(mount, term = '') {
       results.innerHTML = rows.length
         ? `<div class="stack">${rows.map(productLine).join('')}</div>`
         : empty({
-            icon: '🔍',
+            icon: svgIcon('search'),
             title: 'Nothing matched that',
             body: q.value.trim()
               ? `We could not find "${q.value.trim()}" in this store. Try a brand or a category.`
@@ -990,7 +991,7 @@ export async function productView(mount, id) {
   } catch (err) {
     mount.innerHTML = `<div class="wrap" style="padding-top:16px">${
       err.status === 404
-        ? empty({ icon: '🕵️', title: 'Product not found', body: 'It may have been removed from this store.' })
+        ? empty({ icon: svgIcon('search-x'), title: 'Product not found', body: 'It may have been removed from this store.' })
         : failureState(err)
     }</div>`;
     return;
@@ -1007,22 +1008,22 @@ export async function productView(mount, id) {
     // scrolled far below the fold. Both are wired by class, not id.
     const actions = () => (s.available > 0
       ? `<button class="btn lg js-add">Add to basket</button>
-         <button class="btn lg ghost js-hold">🔒 Hold for 1 hour</button>`
-      : `<button class="btn lg soft js-notify">🔔 Notify me when back</button>`);
+         <button class="btn lg ghost js-hold">${svgIcon('lock')} Hold for 1 hour</button>`
+      : `<button class="btn lg soft js-notify">${svgIcon('bell')} Notify me when back</button>`);
 
     mount.innerHTML = `
       <div class="wrap pdp-wrap">
         <div class="pdp">
           <!-- the display stand: product lit from above, standing on wood -->
           <div class="pdp-stage">
-            <button class="heartbtn js-wish" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? '❤️' : '🤍'}</button>
+            <button class="heartbtn js-wish" aria-label="${saved ? 'Remove from' : 'Add to'} wishlist">${saved ? svgIcon('heart-filled') : svgIcon('heart-outline')}</button>
             ${img(product)}
           </div>
 
           <div class="pdp-info">
             ${product.brand ? `<span class="pdp-brand">${h(product.brand)}</span>` : ''}
             <h2 class="pdp-name">${h(product.name)}</h2>
-            ${product.rating ? `<div class="pdp-rating"><span class="star">★</span> ${product.rating}
+            ${product.rating ? `<div class="pdp-rating"><span class="star">${svgIcon('star')}</span> ${product.rating}
               <span class="count">· ${product.rating_count} ratings</span></div>` : ''}
 
             <div class="pdp-price">
@@ -1095,7 +1096,7 @@ export async function productView(mount, id) {
       </div>
 
       <div class="stickybar pdp-bar">
-        <button class="btn ghost js-wish" style="flex:0 0 52px" aria-label="Wishlist">${saved ? '❤️' : '🤍'}</button>
+        <button class="btn ghost js-wish" style="flex:0 0 52px" aria-label="Wishlist">${saved ? svgIcon('heart-filled') : svgIcon('heart-outline')}</button>
         ${actions()}
       </div>`;
 
@@ -1111,7 +1112,7 @@ export async function productView(mount, id) {
     mount.querySelectorAll('.js-wish').forEach((btn) => {
       btn.onclick = async () => {
         await toggleWishlist(product.id, null);
-        const mark = state.wishlistIds.has(product.id) ? '❤️' : '🤍';
+        const mark = state.wishlistIds.has(product.id) ? svgIcon('heart-filled') : svgIcon('heart-outline');
         mount.querySelectorAll('.js-wish').forEach((b) => { b.textContent = mark; });
       };
     });
@@ -1183,7 +1184,7 @@ function openHoldLimitSheet(quota) {
 
       ${quota.charges_warning ? `
         <div class="holdgate-warn">
-          <span class="ic">⚠️</span>
+          <span class="ic">${svgIcon('warning')}</span>
           <span>${h(quota.charges_message)}</span>
         </div>` : ''}
 
@@ -1339,13 +1340,13 @@ function openReserveSheet(product, variant) {
 /* ---------- reservation status ---------- */
 
 const STATUS_COPY = {
-  pending: { icon: '🟡', title: 'Awaiting store confirmation', body: 'The store has your request and will confirm shortly.' },
-  accepted: { icon: '🔵', title: 'Accepted — being prepared', body: 'The store accepted your reservation and is getting it ready.' },
-  ready_for_pickup: { icon: '🟢', title: 'Ready for pickup', body: 'Show this code at the counter to collect your item.' },
-  completed: { icon: '✅', title: 'Picked up', body: 'This reservation is complete. Thanks for shopping with us.' },
-  rejected: { icon: '🔴', title: 'Declined', body: 'The store could not fulfil this one. The stock has been released.' },
-  expired: { icon: '⌛', title: 'Expired', body: 'The hold ran out and the item went back on sale.' },
-  cancelled: { icon: '⚪', title: 'Cancelled', body: 'You cancelled this reservation.' },
+  pending: { icon: svgIcon('dot-warn'), title: 'Awaiting store confirmation', body: 'The store has your request and will confirm shortly.' },
+  accepted: { icon: svgIcon('dot-info'), title: 'Accepted — being prepared', body: 'The store accepted your reservation and is getting it ready.' },
+  ready_for_pickup: { icon: svgIcon('dot-ok'), title: 'Ready for pickup', body: 'Show this code at the counter to collect your item.' },
+  completed: { icon: svgIcon('check-circle'), title: 'Picked up', body: 'This reservation is complete. Thanks for shopping with us.' },
+  rejected: { icon: svgIcon('dot-bad'), title: 'Declined', body: 'The store could not fulfil this one. The stock has been released.' },
+  expired: { icon: svgIcon('hourglass'), title: 'Expired', body: 'The hold ran out and the item went back on sale.' },
+  cancelled: { icon: svgIcon('dot-neutral'), title: 'Cancelled', body: 'You cancelled this reservation.' },
 };
 
 export async function reservationView(mount, id) {
@@ -1441,7 +1442,7 @@ export async function myReservationsView(mount) {
         </div>
         <span class="badge ${h(r.status)}">${h(r.status)}</span>
       </button>`).join('')}</div>`
-      : empty({ icon: '🎟️', title: 'No reservations yet', body: 'Reserve something and it will show up here.' });
+      : empty({ icon: svgIcon('ticket'), title: 'No reservations yet', body: 'Reserve something and it will show up here.' });
 
     list.querySelectorAll('[data-res]').forEach((b) => {
       b.onclick = () => navigate(`/reservation/${b.dataset.res}`);
@@ -1463,12 +1464,12 @@ export async function wishlistView(mount) {
     const [rows] = await Promise.all([api.wishlist(state.me.id), refreshCustomerBadges()]);
     state.wishlistIds = new Set(rows.map((p) => p.id));
     if (!rows.length) {
-      list.innerHTML = empty({ icon: '🤍', title: 'Nothing saved yet', body: 'Tap the heart on any product to keep an eye on it.' });
+      list.innerHTML = empty({ icon: svgIcon('heart-outline'), title: 'Nothing saved yet', body: 'Tap the heart on any product to keep an eye on it.' });
       return;
     }
     list.innerHTML = `<div class="prodgrid">${rows.map((p) => `
       <div style="position:relative">
-        ${p.back_in_stock ? '<span class="badge ready" style="position:absolute;top:8px;left:8px;z-index:3">🔔 Back in stock</span>' : ''}
+        ${p.back_in_stock ? `<span class="badge ready" style="position:absolute;top:8px;left:8px;z-index:3">${svgIcon('bell')} Back in stock</span>` : ''}
         ${productCard(p)}
       </div>`).join('')}</div>`;
     wireProductClicks(list);
@@ -1501,7 +1502,7 @@ export async function recentlyViewedView(mount) {
   let ids = [];
   try { ids = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { ids = []; }
   if (!ids.length) {
-    list.innerHTML = empty({ icon: '🕓', title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
+    list.innerHTML = empty({ icon: svgIcon('clock'), title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
     return;
   }
 
@@ -1512,7 +1513,7 @@ export async function recentlyViewedView(mount) {
     const rows = ids.map((pid) => byId.get(pid)).filter(Boolean);
     list.innerHTML = rows.length
       ? `<div class="prodgrid">${rows.map(productCard).join('')}</div>`
-      : empty({ icon: '🕓', title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
+      : empty({ icon: svgIcon('clock'), title: 'Nothing viewed yet', body: 'Products you open will show up here.' });
     wireProductClicks(list);
   } catch (err) {
     list.innerHTML = failureState(err);
@@ -1531,7 +1532,7 @@ export async function cartView(mount) {
     if (!rows.length) {
       mount.innerHTML = `<div class="wrap" style="padding-top:24px">
           ${empty({
-            icon: '🧺',
+            icon: svgIcon('basket'),
             title: 'Your basket is empty',
             body: 'Add something from the shelves and it will wait for you here.',
             action: '<button class="btn lg" id="browse" style="margin-top:18px">Browse the shelves</button>',
@@ -1568,7 +1569,7 @@ export async function cartView(mount) {
                   <button data-inc="${r.variant_id}" aria-label="One more">+</button>
                 </div>
                 <div class="lineprice">${money(r.price * r.quantity)}</div>
-                <button class="iconbtn" data-del="${r.variant_id}" aria-label="Remove">✕</button>
+                <button class="iconbtn" data-del="${r.variant_id}" aria-label="Remove">${svgIcon('close')}</button>
               </div>`).join('')}
           </div>
 
@@ -1580,7 +1581,7 @@ export async function cartView(mount) {
             <div class="kv"><span class="k">Items</span><span class="v">${cart.count()}</span></div>
             <div class="kv"><span class="k">Pickup at</span><span class="v">${h(state.store?.name || '')}</span></div>
             <div class="total"><span>Total</span><span>${money(cart.total())}</span></div>
-            <button class="btn lg block" id="checkout" style="margin-top:16px">🔒 Hold all for 1 hour</button>
+            <button class="btn lg block" id="checkout" style="margin-top:16px">${svgIcon('lock')} Hold all for 1 hour</button>
             <p class="cart-note">
               Nothing is charged here. Holding puts each item aside at the counter for an hour
               so it is still there when you arrive.
@@ -1652,7 +1653,7 @@ export async function cartView(mount) {
 
       if (!held.length) {
         btn.disabled = false;
-        btn.textContent = '🔒 Hold all for 1 hour';
+        btn.textContent = `${svgIcon('lock')} Hold all for 1 hour`;
         toast(failed[0] || 'Could not hold those items', 'err');
         draw();
         return;
@@ -1689,7 +1690,7 @@ export async function categoriesView(mount) {
     const byCategory = groupBy(products, (p) => p.category, 'Other');
     list.innerHTML = categories.length
       ? `<div class="cat-grid">${inAisleOrder(categories).map((c) => catCard(c, byCategory.get(c) || [])).join('')}</div>`
-      : empty({ icon: '🗂️', title: 'No categories yet', body: 'They appear as the store adds products.' });
+      : empty({ icon: svgIcon('folder'), title: 'No categories yet', body: 'They appear as the store adds products.' });
     tagArtworkIn(list);
     list.querySelectorAll('[data-cat]').forEach((b) => {
       b.onclick = () => navigate(`/search/cat:${encodeURIComponent(b.dataset.cat)}`);
@@ -1706,7 +1707,7 @@ export async function accountView(mount) {
   mount.innerHTML = `
     <div class="wrap" style="padding-top:16px">
       <div class="card pad" style="display:flex;gap:14px;align-items:center">
-        <span class="account-avatar">👤</span>
+        <span class="account-avatar">${svgIcon('person')}</span>
         <span style="flex:1">
           <b style="display:block;font-size:1rem">Hi, ${h(state.me?.name || 'there')}</b>
           <small style="color:var(--muted)">Browsing as a guest — this showcase needs no account.</small>
@@ -1715,22 +1716,22 @@ export async function accountView(mount) {
 
       <div class="stack" style="margin-top:14px">
         <button class="modecard" data-go="/reservations">
-          <span class="ic">🎟️</span>
+          <span class="ic">${svgIcon('ticket')}</span>
           <span style="flex:1"><span class="t">My orders</span><span class="d">Reservations you have placed</span></span>
           <span style="color:var(--muted)">›</span>
         </button>
         <button class="modecard" data-go="/wishlist">
-          <span class="ic">❤️</span>
+          <span class="ic">${svgIcon('heart-filled')}</span>
           <span style="flex:1"><span class="t">Wishlist</span><span class="d">Items you are watching</span></span>
           <span style="color:var(--muted)">›</span>
         </button>
         <button class="modecard" data-go="/recently-viewed">
-          <span class="ic">🕓</span>
+          <span class="ic">${svgIcon('clock')}</span>
           <span style="flex:1"><span class="t">Recently viewed</span><span class="d">Kept on this device</span></span>
           <span style="color:var(--muted)">›</span>
         </button>
         <button class="modecard" data-go="/store-info">
-          <span class="ic">🏪</span>
+          <span class="ic">${svgIcon('store')}</span>
           <span style="flex:1"><span class="t">Store info</span><span class="d">${h(s?.city || '')} · ${s?.is_open ? 'Open now' : 'Closed'}</span></span>
           <span style="color:var(--muted)">›</span>
         </button>
@@ -1796,7 +1797,7 @@ export async function findView(mount) {
 
   const rows = mount.querySelector('#rows');
   const addRow = (value = '') => {
-    rows.appendChild(el(`<div class="row"><input class="input" placeholder="e.g. Basmati rice" value="${h(value)}"><button class="iconbtn" data-del aria-label="Remove">✕</button></div>`));
+    rows.appendChild(el(`<div class="row"><input class="input" placeholder="e.g. Basmati rice" value="${h(value)}"><button class="iconbtn" data-del aria-label="Remove">${svgIcon('close')}</button></div>`));
     rows.lastElementChild.querySelector('[data-del]').onclick = (e) => {
       if (rows.children.length > 1) e.currentTarget.closest('.row').remove();
     };
@@ -1814,7 +1815,7 @@ export async function findView(mount) {
       out.innerHTML = `
         <div class="card pad" style="background:${r.all_available ? 'var(--ok-bg)' : 'var(--warn-bg)'};border:none;margin-bottom:14px">
           <div style="font-weight:800;color:${r.all_available ? 'var(--ok)' : 'var(--warn)'}">
-            ${r.all_available ? '✅ Everything is available here' : `⚠️ ${r.available_count} of ${r.total} available here`}
+            ${r.all_available ? `${svgIcon('check-circle')} Everything is available here` : `${svgIcon('warning')} ${r.available_count} of ${r.total} available here`}
           </div>
           ${!r.all_available ? '<div style="font-size:.8rem;color:var(--warn);margin-top:4px">The parent platform would widen this search to nearby stores.</div>' : ''}
         </div>
@@ -1829,7 +1830,7 @@ export async function findView(mount) {
             <div style="text-align:right">${statusLine({ status: row.product.status, available: row.product.available })}</div>
           </button>` : `
           <div class="line" style="cursor:default">
-            <div class="thumb" style="display:grid;place-items:center;font-size:1.2rem">🚫</div>
+            <div class="thumb" style="display:grid;place-items:center;font-size:1.2rem">${svgIcon('blocked')}</div>
             <div class="meta"><span class="sku">${h(row.term)}</span><span class="name">Not stocked here</span></div>
             <span class="badge rejected">None</span>
           </div>`).join('')}</div>`;
@@ -1853,7 +1854,7 @@ export async function storeInfoView(mount) {
         <h2 style="font-size:1.25rem">${h(s.name)}</h2>
         <p style="color:var(--muted);font-size:.86rem;margin-top:4px">${h(s.tagline)}</p>
         <div class="row" style="margin-top:12px;gap:14px;flex-wrap:wrap">
-          <span style="font-weight:800">★ ${s.rating}</span>
+          <span style="font-weight:800">${svgIcon('star')} ${s.rating}</span>
           <span class="badge ${s.is_open ? 'ready' : 'neutral'}">${s.is_open ? 'Open now' : 'Closed'}</span>
           <span style="font-size:.84rem;color:var(--muted)">${h(s.hours_label)}</span>
         </div>
@@ -1867,8 +1868,8 @@ export async function storeInfoView(mount) {
       </div>
 
       <div class="row" style="margin-top:14px;gap:10px">
-        <a class="btn ghost" style="flex:1" href="${maps}" target="_blank" rel="noopener">🧭 Navigate</a>
-        <a class="btn ghost" style="flex:1" href="tel:${h(s.phone.replace(/\s/g, ''))}">📞 Call</a>
+        <a class="btn ghost" style="flex:1" href="${maps}" target="_blank" rel="noopener">${svgIcon('navigate')} Navigate</a>
+        <a class="btn ghost" style="flex:1" href="tel:${h(s.phone.replace(/\s/g, ''))}">${svgIcon('phone')} Call</a>
       </div>
       <button class="btn lg block" id="browse" style="margin-top:10px">View products</button>
     </div>`;

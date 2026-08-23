@@ -1,5 +1,6 @@
 // Presentation primitives: escaping, formatting, toasts, sheets, skeletons,
 // charts. No knowledge of products, stock or reservations lives here.
+import { svgIcon } from './icons.js';
 
 export const h = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -36,7 +37,7 @@ export function statusLine(stock, { showUnits = true } = {}) {
 
 export function staleWarning(stock) {
   if (!stock || !stock.freshness || !stock.freshness.stale) return '';
-  return `<div class="stalewarn"><span>⚠️</span><span>Stock may be outdated — ${h(stock.freshness.label.toLowerCase())}. Please confirm with the store.</span></div>`;
+  return `<div class="stalewarn"><span>${svgIcon('warning')}</span><span>Stock may be outdated — ${h(stock.freshness.label.toLowerCase())}. Please confirm with the store.</span></div>`;
 }
 
 /* ---------- toasts ---------- */
@@ -106,7 +107,7 @@ export function confirmSheet({ title, body, confirmLabel = 'Confirm', danger = f
 }
 
 /* ---------- states ---------- */
-export const empty = ({ icon = '📦', title, body = '', action = '' }) =>
+export const empty = ({ icon = svgIcon('box'), title, body = '', action = '' }) =>
   `<div class="empty"><div class="ic">${icon}</div><h3>${h(title)}</h3><p>${h(body)}</p>${action}</div>`;
 
 export const errorBox = (message, retryId = '') =>
@@ -119,7 +120,7 @@ export const offlineState = (retryId = '') => `
     <img class="offline-art" src="/images/offline.png" alt="" width="320" height="203">
     <h3>Cannot reach the store</h3>
     <p>We're having trouble connecting to our store.<br>Please check your internet connection and try again.</p>
-    ${retryId ? `<button class="btn lg" id="${retryId}">↻ Try again</button>` : ''}
+    ${retryId ? `<button class="btn lg" id="${retryId}">${svgIcon('refresh')} Try again</button>` : ''}
   </div>`;
 
 /** Picks how a failure should look. A dropped connection is worth a full
@@ -183,9 +184,9 @@ const clockTime = (ts) => {
 };
 
 const KIND_ICON = {
-  STOCK_RECEIVED: '📥', STOCK_ADJUSTMENT: '✏️', SALE: '💰', RETURN: '↩️',
-  RESERVATION: '🟡', RESERVATION_ACCEPTED: '🔵', RESERVATION_READY: '🟢',
-  RESERVATION_RELEASE: '⚪', PICKUP: '✅',
+  STOCK_RECEIVED: svgIcon('inbox'), STOCK_ADJUSTMENT: svgIcon('edit'), SALE: svgIcon('money'), RETURN: svgIcon('undo'),
+  RESERVATION: svgIcon('dot-warn'), RESERVATION_ACCEPTED: svgIcon('dot-info'), RESERVATION_READY: svgIcon('dot-ok'),
+  RESERVATION_RELEASE: svgIcon('dot-neutral'), PICKUP: svgIcon('check-circle'),
 };
 
 export function timeline(rows, { emptyText = 'No activity yet.' } = {}) {

@@ -5,7 +5,7 @@
 // stale-while-revalidate, so without a new name an already-installed app
 // serves the previous version once more before picking the update up; a new
 // name makes install fetch a fresh shell and activate drop the old one.
-const CACHE = 'showcase-v6';
+const CACHE = 'showcase-v7';
 
 const SHELL = [
   '/',
@@ -14,6 +14,7 @@ const SHELL = [
   '/js/api.js',
   '/js/state.js',
   '/js/ui.js',
+  '/js/icons.js',
   '/js/views/customer.js',
   '/js/views/store.js',
   '/images/stage.jpg',
