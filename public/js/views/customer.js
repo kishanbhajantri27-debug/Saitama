@@ -276,6 +276,9 @@ export function productCard(p) {
         <div class="cardactions">
           ${p.status === 'out'
             ? `<button class="btn ghost block" data-notify="${p.id}">${svgIcon('bell')} Tell me when it is back</button>`
+            : p.status === 'limited'
+            ? `<button class="btn block" data-buynow="${p.id}">${svgIcon('bolt')} Buy now</button>
+               <button class="btn ghost block" data-add="${p.id}">Add to basket</button>`
             : `<button class="btn block" data-add="${p.id}">Add to basket</button>
                <button class="btn ghost block" data-hold="${p.id}">${svgIcon('lock')} Hold for 1 hour</button>`}
         </div>`}
@@ -395,6 +398,15 @@ export function wireProductClicks(root) {
       if (holdBtn) {
         e.stopPropagation();
         await quickHold(Number(holdBtn.dataset.hold), holdBtn);
+        return;
+      }
+
+      const buyBtn = e.target.closest('[data-buynow]');
+      if (buyBtn) {
+        e.stopPropagation();
+        const p = cardData.get(Number(buyBtn.dataset.buynow));
+        const variant = pickVariant(p);
+        if (p && variant) openBuyNowSheet(p, variant);
         return;
       }
 
@@ -1006,10 +1018,17 @@ export async function productView(mount, id) {
     // One set of actions, rendered twice: beside the product on a wide
     // screen, and in the sticky bar on a phone where the info column has
     // scrolled far below the fold. Both are wired by class, not id.
-    const actions = () => (s.available > 0
-      ? `<button class="btn lg js-add">Add to basket</button>
-         <button class="btn lg ghost js-hold">${svgIcon('lock')} Hold for 1 hour</button>`
-      : `<button class="btn lg soft js-notify">${svgIcon('bell')} Notify me when back</button>`);
+    const actions = () => {
+      if (s.available <= 0) {
+        return `<button class="btn lg soft js-notify">${svgIcon('bell')} Notify me when back</button>`;
+      }
+      if (s.status === 'limited') {
+        return `<button class="btn lg js-buynow">${svgIcon('bolt')} Buy now</button>
+                <button class="btn lg ghost js-add">Add to basket</button>`;
+      }
+      return `<button class="btn lg js-add">Add to basket</button>
+              <button class="btn lg ghost js-hold">${svgIcon('lock')} Hold for 1 hour</button>`;
+    };
 
     mount.innerHTML = `
       <div class="wrap pdp-wrap">
@@ -1119,6 +1138,10 @@ export async function productView(mount, id) {
 
     mount.querySelectorAll('.js-hold').forEach((btn) => {
       btn.onclick = () => openReserveSheet(product, selected);
+    });
+
+    mount.querySelectorAll('.js-buynow').forEach((btn) => {
+      btn.onclick = () => openBuyNowSheet(product, selected);
     });
 
     // Adds the option the shopper is actually looking at, not the first one
@@ -1337,6 +1360,57 @@ function openReserveSheet(product, variant) {
   });
 }
 
+/** Buy it now: skips the hold countdown, pays (mock) immediately, and the
+    item is ready to collect straight away -- no staff accept step, since
+    there is nothing left to decide once it is sold. */
+function openBuyNowSheet(product, variant) {
+  const max = variant.stock.available;
+
+  sheet(`
+    <h3>Buy now</h3>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">Paid now, ready to collect at ${h(state.store?.name || 'the store')}.</p>
+    <div class="card pad" style="margin-bottom:14px">
+      <div class="kv"><span class="k">Product</span><span class="v">${h(product.name)}</span></div>
+      <div class="kv"><span class="k">Option</span><span class="v">${h(variant.label)}</span></div>
+      <div class="kv"><span class="k">Price</span><span class="v">${money(variant.price)}</span></div>
+    </div>
+    <label class="field" style="margin-bottom:12px">
+      <span class="lbl">Quantity (max ${max})</span>
+      <select class="input" id="qty">
+        ${Array.from({ length: Math.min(max, 5) }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('')}
+      </select>
+    </label>
+    <label class="field" style="margin-bottom:18px">
+      <span class="lbl">Your name</span>
+      <input class="input" id="nm" value="${h(state.me?.name || '')}" placeholder="Name for the counter">
+    </label>
+    <p style="font-size:.76rem;color:var(--muted);margin-bottom:14px">Demo only — no real payment is taken. The item is marked sold and held for you with no expiry until you pick it up.</p>
+    <button class="btn lg block" id="go">Pay & buy now</button>
+  `, {
+    onMount(panel, close) {
+      panel.querySelector('#go').onclick = async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = 'Processing…';
+        try {
+          const res = await api.buyNow({
+            variant_id: variant.id,
+            customer_id: state.me.id,
+            quantity: Number(panel.querySelector('#qty').value),
+            name: panel.querySelector('#nm').value.trim() || state.me.name,
+          });
+          close();
+          navigate(`/reservation/${res.id}`);
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Pay & buy now';
+          toast(err.message, 'err');
+        }
+      };
+    },
+  });
+}
+
 /* ---------- reservation status ---------- */
 
 const STATUS_COPY = {
@@ -1373,7 +1447,9 @@ export async function reservationView(mount, id) {
             <div class="qrbox"><img src="/api/reservations/${r.id}/qr.svg" alt="Reservation QR code" width="168" height="168"></div>
             <div class="rescode" style="margin-top:12px">${h(r.code)}</div>
             <p style="font-size:.78rem;color:var(--muted);margin-top:6px">
-              ${r.expires_in_minutes !== null ? `Held for ${r.expires_in_minutes} more minute${r.expires_in_minutes === 1 ? '' : 's'}` : 'Hold active'}
+              ${r.prepaid ? 'Paid — no expiry, come by whenever'
+                : r.expires_in_minutes !== null ? `Held for ${r.expires_in_minutes} more minute${r.expires_in_minutes === 1 ? '' : 's'}`
+                : 'Hold active'}
             </p>
           </div>` : `
           <div class="card pad" style="text-align:center">
@@ -1386,6 +1462,7 @@ export async function reservationView(mount, id) {
           <div class="kv"><span class="k">Quantity</span><span class="v">${r.quantity}</span></div>
           <div class="kv"><span class="k">Total</span><span class="v">${money(r.price * r.quantity)}</span></div>
           <div class="kv"><span class="k">Status</span><span class="v"><span class="badge ${h(r.status)}">${h(r.status)}</span></span></div>
+          ${r.prepaid ? `<div class="kv"><span class="k">Payment</span><span class="v">Paid online (demo)</span></div>` : ''}
           <div class="kv"><span class="k">Pickup at</span><span class="v">${h(state.store?.name || '')}</span></div>
         </div>
 

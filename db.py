@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     ('pending','accepted','ready_for_pickup','completed','rejected','expired','cancelled')),
   note TEXT DEFAULT '',
   expires_at TEXT,
+  prepaid INTEGER NOT NULL DEFAULT 0,  -- bought online; never auto-expires, sale already recorded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -302,10 +303,23 @@ def init():
             _drop_all(conn)
 
         conn.executescript(SCHEMA)
+        _migrate_columns(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_columns(conn):
+    """New columns on existing tables, added without a version bump.
+
+    Each is guarded so it only runs once, per the SCHEMA_VERSION comment
+    above: an existing demo database keeps its rows instead of being dropped
+    for a change this small.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(reservations)")}
+    if "prepaid" not in cols:
+        conn.execute("ALTER TABLE reservations ADD COLUMN prepaid INTEGER NOT NULL DEFAULT 0")
 
 
 def _drop_all(conn):

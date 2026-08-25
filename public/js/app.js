@@ -53,6 +53,30 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+/* ---------- offline banner ----------
+   navigator.onLine is only ever a first guess -- it can misreport at boot,
+   and even when right it only reflects the network interface (a Wi-Fi
+   router with no internet still reads "online"). A real request completing
+   (see connectivity in api.js) is the one signal that is actually proven,
+   so every 'connectivitychange' overrides the guess outright rather than
+   being merged with it -- otherwise a bad initial guess of "offline" could
+   never be corrected once api.js had nothing left to prove it wrong about
+   (it only fires when something changes, not when it stays the same). The
+   browser's own online/offline events still get to show or hide the banner
+   instantly, ahead of the next request confirming it either way. */
+const offlineBanner = document.getElementById('offlineBanner');
+let showBanner = !navigator.onLine;
+
+function syncOfflineBanner() {
+  if (!offlineBanner) return;
+  offlineBanner.hidden = !showBanner;
+}
+
+window.addEventListener('online', () => { showBanner = false; syncOfflineBanner(); });
+window.addEventListener('offline', () => { showBanner = true; syncOfflineBanner(); });
+window.addEventListener('connectivitychange', (e) => { showBanner = e.detail.offline; syncOfflineBanner(); });
+syncOfflineBanner();
+
 /* ---------- chrome ---------- */
 
 // Five slots with a raised scanner in the middle, matching the storefront

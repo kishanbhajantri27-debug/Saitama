@@ -151,6 +151,79 @@ def create(variant_id, customer_id, quantity=1, note="", minutes=None, branch_id
     return get(new_id)
 
 
+def buy_now(variant_id, customer_id, quantity=1, note="", branch_id=None):
+    """Buy it now, still pick up in-store.
+
+    A hold is a promise stock will wait; this is a sale that has already
+    happened, so it starts life ready for pickup (there is nothing left for
+    staff to accept or prepare) and never expires -- nobody paid for a hold
+    that unravels on its own. Payment is mock, same as everywhere else in
+    this demo: recorded immediately rather than at pickup, so the sale is
+    booked the moment the customer commits to buying.
+    """
+    branch_id = branch_id or config.BRANCH_ID
+    quantity = int(quantity)
+    if quantity < 1:
+        raise ReservationError("quantity must be at least 1")
+
+    expire_due()
+
+    with db.transaction() as conn:
+        variant = conn.execute(
+            "SELECT * FROM product_variants WHERE id = ?", (variant_id,)).fetchone()
+        if not variant:
+            raise ReservationError("product not found")
+        customer = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        if not customer:
+            raise ReservationError("customer not found")
+
+        inventory.ensure_row(conn, variant_id, branch_id)
+        stock = conn.execute(
+            "SELECT * FROM inventory WHERE variant_id = ? AND branch_id = ?",
+            (variant_id, branch_id),
+        ).fetchone()
+
+        available = stock["on_hand"] - stock["reserved"]
+        if quantity > available:
+            raise ReservationError(
+                f"only {available} available" if available else "out of stock")
+
+        conn.execute(
+            "UPDATE inventory SET reserved = reserved + ? WHERE id = ?", (quantity, stock["id"]))
+
+        code = _code()
+        while conn.execute("SELECT 1 FROM reservations WHERE code = ?", (code,)).fetchone():
+            code = _code()
+
+        cur = conn.execute(
+            """INSERT INTO reservations
+                 (code, store_id, branch_id, variant_id, customer_id, quantity, note,
+                  status, prepaid, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'ready_for_pickup', 1, NULL)""",
+            (code, config.STORE_ID, branch_id, variant_id, customer_id, quantity, note),
+        )
+        new_id = cur.lastrowid
+
+        inventory.record_movement(
+            conn, variant_id, "RESERVATION", quantity, f"bought online as {code}", "customer",
+            branch_id, reserved_delta=quantity, reservation_id=new_id,
+        )
+        inventory.record_movement(
+            conn, variant_id, "RESERVATION_READY", quantity, code, "customer",
+            branch_id, reservation_id=new_id,
+        )
+
+        sold = conn.execute(
+            "SELECT * FROM reservations WHERE id = ?", (new_id,)).fetchone()
+        _write_sale(conn, sold)
+
+    result = get(new_id)
+    audit.record(None, "reservation.buy_now", "reservation", new_id,
+                 {"code": result["code"], "quantity": result["quantity"]})
+    return result
+
+
 def _set_status(reservation_id, new_status, release_stock=False, consume_stock=False, actor="staff"):
     with db.transaction() as conn:
         row = conn.execute(
@@ -186,7 +259,10 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
                 f"picked up {row['code']}", _name(actor), row["branch_id"],
                 on_hand_delta=-row["quantity"], reserved_delta=-row["quantity"],
                 reservation_id=reservation_id)
-            _write_sale(conn, row)
+            # A prepaid reservation already has its order/payment/invoice from
+            # buy_now(); writing another here would double the sale.
+            if not row["prepaid"]:
+                _write_sale(conn, row)
 
         # Accept and ready move no stock, but they belong on the timeline: the
         # history exists to explain how a count reached its current value.

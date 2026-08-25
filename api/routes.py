@@ -384,6 +384,33 @@ def create_reservation():
     return jsonify(result), 201
 
 
+@api_bp.post("/reservations/buy-now")
+def buy_now_reservation():
+    """Instant purchase, still picked up in-store.
+
+    Not gated by holds.check(): the fair-use limit rations free holds, and
+    this shopper is paying (albeit in mock money), so it does not apply.
+    """
+    body = _body()
+    variant_id = _int(body.get("variant_id"))
+    if not variant_id:
+        return jsonify(error="variant_id is required"), 400
+
+    customer_id = _int(body.get("customer_id"))
+    if not customer_id:
+        customer = customers.find_or_create(
+            body.get("name", "Guest"), body.get("phone", ""), body.get("email", ""))
+        customer_id = customer["id"]
+
+    result = reservations.buy_now(
+        variant_id=variant_id,
+        customer_id=customer_id,
+        quantity=_int(body.get("quantity"), 1) or 1,
+        note=body.get("note", ""),
+    )
+    return jsonify(result), 201
+
+
 @api_bp.get("/reservations")
 def list_reservations():
     """Staff see the whole queue; a customer may read only their own."""

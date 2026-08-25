@@ -59,6 +59,7 @@ const ICONS = {
   'dot-neutral': '<circle cx="12" cy="12" r="7" fill="var(--muted)" stroke="none"/>',
   star: '<path fill="currentColor" stroke="none" d="M12 3.2 14.6 9l6.4.6-4.8 4.3 1.4 6.3L12 16.9 6.4 20.2l1.4-6.3-4.8-4.3L9 9Z"/>',
   sparkle: '<path fill="currentColor" stroke="none" d="M12 3 13.3 9.7 20 11 13.3 12.3 12 19 10.7 12.3 4 11 10.7 9.7Z"/>',
+  bolt: '<path fill="currentColor" stroke="none" d="M13 2 4 14h6l-1 8 10-12h-6Z"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2v5l3.6 2"/>',
   hourglass: '<path d="M6.8 4h10.4M6.8 20h10.4"/><path d="M7.8 4c0 4.1 2 5.6 4.2 6.5-2.2 1-4.2 2.4-4.2 6.5M16.2 4c0 4.1-2 5.6-4.2 6.5 2.2 1 4.2 2.4 4.2 6.5"/>',
   contrast: '<circle cx="12" cy="12" r="8.5"/><path fill="currentColor" stroke="none" d="M12 3.5a8.5 8.5 0 0 1 0 17Z"/>',

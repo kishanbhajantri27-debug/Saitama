@@ -103,6 +103,19 @@ img { display: block; max-width: 100%; }
   stroke-linecap: round; stroke-linejoin: round;
 }
 
+/* ============ offline banner ============
+   Lives outside #app (see index.html) so a route re-render never wipes it.
+   Sticky and first in the document, so it stacks directly above .appbar's
+   own sticky top:0 rather than fighting it with z-index. */
+.offlinebar {
+  position: sticky; top: 0; z-index: 41; text-align: center;
+  background: var(--warn-bg); color: var(--warn);
+  font-size: .78rem; font-weight: 700;
+  padding: 7px 12px; padding-top: calc(7px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+}
+.offlinebar[hidden] { display: none; }
+
 /* ============ app bar ============ */
 /* The page is viewport-fit=cover, so installed on a phone it draws behind
    the status bar -- there is no browser chrome up there to hold it off. The
@@ -383,6 +396,7 @@ img { display: block; max-width: 100%; }
 .badge.completed { background: var(--ok-bg); color: var(--ok); }
 .badge.rejected, .badge.expired, .badge.cancelled { background: var(--bad-bg); color: var(--bad); }
 .badge.neutral { background: var(--line-2); color: var(--ink-2); }
+.badge.ok { background: var(--ok-bg); color: var(--ok); text-transform: none; }
 
 /* ============ tables ============ */
 .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }

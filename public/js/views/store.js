@@ -227,6 +227,7 @@ export async function reservationsView(mount) {
       <div class="row between" style="align-items:flex-start">
         <div style="min-width:0">
           <div class="row" style="gap:8px"><span class="badge ${h(r.status)}">${h(r.status.replace(/_/g, " "))}</span>
+            ${r.prepaid ? `<span class="badge ok">paid online</span>` : ''}
             <span class="sku" style="font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted)">${h(r.code)}</span></div>
           <div style="font-weight:800;margin-top:8px">${h(r.customer_name)}</div>
           <div style="font-size:.84rem;color:var(--ink-2)">${h(r.product_name)} · ${h(r.variant_label)}</div>

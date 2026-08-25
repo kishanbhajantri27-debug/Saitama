@@ -25,10 +25,14 @@ import db
 # Cancelled and expired holds still count. The cost to the store was already
 # paid the moment the stock came off the shelf, and forgiving them would make
 # the cap trivially avoidable: hold, cancel, repeat.
+#
+# Prepaid (buy-now) rows are excluded: the allowance rations holds that cost
+# the store real shelf space for free, and a bought item already paid for
+# that space, so it is not the thing this policy is protecting against.
 COUNTED_SQL = """
 FROM reservations r
 JOIN product_variants v ON v.id = r.variant_id
-WHERE r.customer_id = ? AND date(r.created_at) = ?
+WHERE r.customer_id = ? AND date(r.created_at) = ? AND r.prepaid = 0
 """
 
 
@@ -92,7 +96,7 @@ def capped_streak(customer_id):
         """SELECT date(r.created_at) AS day, COUNT(DISTINCT v.product_id) AS n
            FROM reservations r
            JOIN product_variants v ON v.id = r.variant_id
-           WHERE r.customer_id = ?
+           WHERE r.customer_id = ? AND r.prepaid = 0
            GROUP BY day
            HAVING n >= ?
            ORDER BY day DESC""",
