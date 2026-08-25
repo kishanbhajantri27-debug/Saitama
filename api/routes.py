@@ -728,6 +728,12 @@ def analytics_overview():
     return jsonify(analytics.overview())
 
 
+@api_bp.get("/analytics/refunds")
+@require_permission("refund.view")
+def analytics_refunds():
+    return jsonify(analytics.refunds(limit=_int(request.args.get("limit"), 100) or 100))
+
+
 # ---------- Parent platform integration ----------
 #
 # A different trust boundary from everything above: the caller is a machine

@@ -137,6 +137,7 @@ export async function dashboardView(mount) {
           <button class="quick" data-go="/store/reservations"><span class="ic">${svgIcon('ticket')}</span>Reservations</button>
           ${may('analytics.view') ? `<button class="quick" data-go="/store/analytics"><span class="ic">${svgIcon('chart-line')}</span>Sales</button>` : ''}
           ${may('inventory.history.view') ? `<button class="quick" data-go="/store/history"><span class="ic">${svgIcon('clock')}</span>History</button>` : ''}
+          ${may('refund.view') ? `<button class="quick" data-go="/store/refunds"><span class="ic">${svgIcon('undo')}</span>Refunds</button>` : ''}
           ${may('audit.view') ? `<button class="quick" data-go="/store/audit"><span class="ic">${svgIcon('shield')}</span>Audit</button>` : ''}
           ${may('settings.view') ? `<button class="quick" data-go="/store/settings"><span class="ic">${svgIcon('gear')}</span>Settings</button>` : ''}
         </div>
@@ -848,6 +849,51 @@ export async function historyView(mount) {
 
   drawFilters();
   load();
+}
+
+/* ---------- refunds ---------- */
+
+export async function refundsView(mount) {
+  if (!guard()) return;
+  mount.innerHTML = `
+    <div class="wrap" style="padding-top:16px">
+      <h2 style="margin-bottom:6px">Refunds</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">
+        Every buy-now purchase refunded after being cancelled or declined before pickup.
+      </p>
+      <div id="list">${skeletonLines(4)}</div>
+    </div>`;
+
+  const list = mount.querySelector('#list');
+  try {
+    const { items, count, total } = await api.refunds();
+    const summary = `
+      <div class="tiles" style="margin-bottom:14px">
+        <div class="tile accent"><div class="k">Refunded</div><div class="v">${money(total)}</div><div class="sub">${count} refund${count === 1 ? '' : 's'}</div></div>
+      </div>`;
+    if (!items.length) {
+      list.innerHTML = summary + empty({
+        icon: svgIcon('undo'), title: 'No refunds yet',
+        body: 'A refund appears here when a bought item is cancelled or declined before pickup.',
+      });
+      return;
+    }
+    list.innerHTML = summary + `<div class="card pad"><ul class="tl">${items.map((r) => `
+      <li>
+        <span class="tl-ic">${svgIcon('undo')}</span>
+        <span class="tl-body">
+          <span class="tl-top">
+            <span class="tl-label">${h(r.product_name)}${r.sku ? ` · ${h(r.sku)}` : ''}</span>
+            <span class="tl-time">${h((r.created_at || '').slice(5, 16))}</span>
+          </span>
+          <span class="tl-sub">${h(r.customer_name || 'Guest')}${r.reservation_code ? ` · ${h(r.reservation_code)}` : ''} · Qty ${r.quantity}</span>
+          <span class="tl-sub">${money(r.amount)} refunded${r.reason ? ` · ${h(r.reason)}` : ''}</span>
+        </span>
+      </li>`).join('')}</ul></div>`;
+  } catch (err) {
+    if (err.status === 401) return navigate('/store/login', { replace: true });
+    list.innerHTML = errorBox(err.message);
+  }
 }
 
 /* ---------- audit log ---------- */

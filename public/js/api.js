@@ -205,4 +205,5 @@ export const api = {
   inventorySummary: () => call('/inventory/summary', { staff: true }),
   today: () => call('/analytics/today', { staff: true }),
   overview: () => call('/analytics/overview', { staff: true }),
+  refunds: (limit) => call(`/analytics/refunds${limit ? `?limit=${limit}` : ''}`, { staff: true }),
 };

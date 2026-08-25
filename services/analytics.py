@@ -76,6 +76,30 @@ def top_products(limit=5):
     )
 
 
+def refunds(limit=100):
+    """Every refund issued, newest first, with enough context to place it --
+    which reservation, whose it was, what it was for -- without a second
+    lookup. The total and count are their own query rather than derived from
+    this capped list, so they stay accurate past the limit."""
+    rows = db.query(
+        """SELECT rf.id, rf.amount, rf.reason, rf.created_at,
+                  o.product_name, o.sku, o.quantity, r.code AS reservation_code,
+                  c.name AS customer_name
+           FROM refunds rf
+           JOIN orders o ON o.id = rf.order_id
+           LEFT JOIN reservations r ON r.id = o.reservation_id
+           LEFT JOIN customers c ON c.id = o.customer_id
+           WHERE rf.store_id = ?
+           ORDER BY rf.created_at DESC LIMIT ?""",
+        (config.STORE_ID, limit),
+    )
+    totals = db.query_one(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM refunds WHERE store_id = ?",
+        (config.STORE_ID,),
+    )
+    return {"items": rows, "count": totals["n"], "total": round(totals["total"], 2)}
+
+
 def low_stock(limit=10):
     rows = [r for r in inventory.levels() if r["status"] in ("limited", "out")]
     rows.sort(key=lambda r: (r["available"], r["product_name"]))

@@ -245,3 +245,72 @@ class TestBuyNowOverTheApi:
             "customer_id": a_customer["id"], "quantity": 1,
         })
         assert res.status_code == 400
+
+
+class TestRefundHistory:
+    def test_lists_a_refund_with_its_context(self, a_variant, a_customer):
+        from services import analytics
+
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 2)
+        reservations.cancel(bought["id"])
+
+        report = analytics.refunds()
+        assert report["count"] == 1
+        assert report["total"] == a_variant["price"] * 2
+
+        row = report["items"][0]
+        assert row["reservation_code"] == bought["code"]
+        assert row["customer_name"] == a_customer["name"]
+        assert row["sku"] == a_variant["sku"]
+        assert row["quantity"] == 2
+        assert row["amount"] == a_variant["price"] * 2
+        assert "cancelled" in row["reason"]
+
+    def test_total_and_count_add_up_across_several_refunds(self, a_customer):
+        from services import analytics, catalog
+
+        picks, seen = [], set()
+        for product in catalog.list_products():
+            if product["id"] in seen:
+                continue
+            full = catalog.get_product(product["id"])
+            for variant in full["variants"]:
+                if variant["stock"]["available"] > 0:
+                    picks.append(variant)
+                    seen.add(product["id"])
+                    break
+            if len(picks) == 3:
+                break
+
+        expected_total = 0
+        for variant in picks:
+            bought = reservations.buy_now(variant["id"], a_customer["id"], 1)
+            reservations.cancel(bought["id"])
+            expected_total += variant["price"]
+
+        report = analytics.refunds()
+        assert report["count"] == len(picks)
+        assert report["total"] == round(expected_total, 2)
+
+    def test_an_unpaid_cancelled_hold_never_shows_up(self, a_variant, a_customer):
+        from services import analytics
+
+        held = reservations.create(a_variant["id"], a_customer["id"], 1)
+        reservations.cancel(held["id"])
+
+        assert analytics.refunds()["count"] == 0
+
+    def test_owner_and_manager_can_view_the_report(self, client, owner_headers, manager_headers):
+        for headers in (owner_headers, manager_headers):
+            res = client.get("/api/analytics/refunds", headers=headers)
+            assert res.status_code == 200
+            body = res.get_json()
+            assert "items" in body and "total" in body and "count" in body
+
+    def test_plain_staff_cannot_view_the_report(self, client, staff_headers):
+        res = client.get("/api/analytics/refunds", headers=staff_headers)
+        assert res.status_code == 403
+
+    def test_anonymous_cannot_view_the_report(self, client):
+        res = client.get("/api/analytics/refunds")
+        assert res.status_code == 401

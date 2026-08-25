@@ -433,6 +433,7 @@ route('/store/reservations', () => storeFrame('Reservations', (s) => S.reservati
 route('/store/scan', () => storeFrame('Scanner', (s) => S.scanView(s)));
 route('/store/analytics', () => storeFrame('Sales', (s) => S.analyticsView(s)));
 route('/store/history', () => storeFrame('History', (s) => S.historyView(s)));
+route('/store/refunds', () => storeFrame('Refunds', (s) => S.refundsView(s)));
 route('/store/audit', () => storeFrame('Audit log', (s) => S.auditView(s)));
 route('/store/settings', () => storeFrame('Settings', (s) => S.settingsView(s)));
 

@@ -65,6 +65,7 @@ PERMISSIONS = {
     "order.void":              {OWNER},
 
     # --- refunds ---
+    "refund.view":             {OWNER, MANAGER},
     "refund.create":           {OWNER, MANAGER},
     "refund.approve":          {OWNER},
 
