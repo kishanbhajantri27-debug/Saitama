@@ -1,7 +1,8 @@
 """Products, variants, search and filtering."""
 import config
 import db
-from services import inventory
+from services import audit, inventory
+from services.security import require
 
 
 def _attach_stock(variants, branch_id=None):
@@ -67,8 +68,8 @@ def list_products(search="", category=None, status=None, sort="popular", branch_
 
     if search:
         # Split the query and require every word to land somewhere on the
-        # product. "Nike shoes" only works this way: "nike" hits the brand and
-        # "shoes" hits the tags, and neither field contains the whole phrase.
+        # product. "Amul ghee" only works this way: "amul" hits the brand and
+        # "ghee" hits the name, and neither field contains the whole phrase.
         for token in search.strip().lower().split():
             like = f"%{token}%"
             sql += """ AND (lower(name) LIKE ? OR lower(brand) LIKE ?
@@ -165,3 +166,136 @@ def check_many(names, branch_id=None):
         "available_count": sum(1 for r in results if r["available"]),
         "total": len(results),
     }
+
+
+# -- local catalogue editing --------------------------------------------------
+#
+# Distinct from the parent-platform push in services/parent_sync.py: these
+# functions are for a person at this store adding or fixing a product by
+# hand, so they carry no parent_ref and are gated on a staff permission
+# rather than the parent token. A product created here and a product pushed
+# from head office are indistinguishable rows afterwards -- there is nothing
+# that marks one as "local" -- so a later push that happens to reuse the same
+# parent_ref would still update it correctly.
+
+_PRODUCT_FIELDS = ("name", "brand", "category", "description", "tags", "image_url")
+
+
+def create_product(actor, *, name, brand="", category="", description="", tags="", image_url=""):
+    require(actor, "product.create")
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("A product needs a name.")
+    _rowcount, product_id = db.execute(
+        """INSERT INTO products (store_id, name, brand, category, description, tags, image_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (config.STORE_ID, name, brand or "", category or "", description or "", tags or "", image_url or ""),
+    )
+    audit.record(actor, "product.create", "product", product_id, {"name": name})
+    return get_product(product_id)
+
+
+def update_product(actor, product_id, **fields):
+    """Patch the fields given; anything omitted keeps its current value."""
+    require(actor, "product.edit")
+    existing = db.query_one(
+        "SELECT * FROM products WHERE id = ? AND store_id = ?", (product_id, config.STORE_ID)
+    )
+    if not existing:
+        raise ValueError("No such product.")
+    merged = {key: fields.get(key, existing[key]) or "" for key in _PRODUCT_FIELDS}
+    merged["name"] = merged["name"].strip()
+    if not merged["name"]:
+        raise ValueError("A product needs a name.")
+    db.execute(
+        "UPDATE products SET name=?, brand=?, category=?, description=?, tags=?, image_url=? WHERE id=?",
+        (*merged.values(), product_id),
+    )
+    audit.record(actor, "product.edit", "product", product_id, {"changed": sorted(fields)})
+    return get_product(product_id)
+
+
+def delete_product(actor, product_id):
+    """Removes every variant with it (ON DELETE CASCADE) -- a product with no
+    variants left dangling would be unreachable but not gone."""
+    require(actor, "product.delete")
+    existing = db.query_one(
+        "SELECT id FROM products WHERE id = ? AND store_id = ?", (product_id, config.STORE_ID)
+    )
+    if not existing:
+        raise ValueError("No such product.")
+    db.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    audit.record(actor, "product.delete", "product", product_id)
+
+
+def _variant_fields(existing, fields):
+    sku = (fields.get("sku") if "sku" in fields else existing["sku"]) or ""
+    sku = sku.strip()
+    if not sku:
+        raise ValueError("A variant needs a SKU.")
+    return {
+        "sku": sku,
+        "barcode": (fields.get("barcode") if "barcode" in fields else existing["barcode"]) or None,
+        "label": (fields.get("label") if "label" in fields else existing["label"]) or "",
+        "price": float((fields.get("price") if "price" in fields else existing["price"]) or 0),
+    }
+
+
+def add_variant(actor, product_id, *, sku, barcode="", label="", price=0):
+    require(actor, "product.edit")
+    product = db.query_one(
+        "SELECT id FROM products WHERE id = ? AND store_id = ?", (product_id, config.STORE_ID)
+    )
+    if not product:
+        raise ValueError("No such product.")
+    sku = (sku or "").strip()
+    if not sku:
+        raise ValueError("A variant needs a SKU.")
+    if db.query_one("SELECT id FROM product_variants WHERE sku = ?", (sku,)):
+        raise ValueError(f"SKU {sku!r} is already in use.")
+    _rowcount, variant_id = db.execute(
+        """INSERT INTO product_variants (product_id, store_id, sku, barcode, label, price)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (product_id, config.STORE_ID, sku, barcode or None, label or "", float(price or 0)),
+    )
+    audit.record(actor, "product.variant_add", "variant", variant_id, {"sku": sku})
+    return get_variant(variant_id)
+
+
+def update_variant(actor, variant_id, **fields):
+    require(actor, "product.edit")
+    existing = db.query_one(
+        "SELECT * FROM product_variants WHERE id = ? AND store_id = ?", (variant_id, config.STORE_ID)
+    )
+    if not existing:
+        raise ValueError("No such variant.")
+    merged = _variant_fields(existing, fields)
+    if merged["sku"] != existing["sku"] and db.query_one(
+        "SELECT id FROM product_variants WHERE sku = ? AND id != ?", (merged["sku"], variant_id)
+    ):
+        raise ValueError(f"SKU {merged['sku']!r} is already in use.")
+    db.execute(
+        "UPDATE product_variants SET sku=?, barcode=?, label=?, price=? WHERE id=?",
+        (*merged.values(), variant_id),
+    )
+    audit.record(actor, "product.variant_edit", "variant", variant_id, {"changed": sorted(fields)})
+    return get_variant(variant_id)
+
+
+def delete_variant(actor, variant_id):
+    """Refused on a product's last variant: a product with none is a dangling
+    shelf label nothing can ever sell -- delete the product instead."""
+    require(actor, "product.delete")
+    existing = db.query_one(
+        "SELECT id, product_id FROM product_variants WHERE id = ? AND store_id = ?",
+        (variant_id, config.STORE_ID),
+    )
+    if not existing:
+        raise ValueError("No such variant.")
+    remaining = db.query_one(
+        "SELECT COUNT(*) AS n FROM product_variants WHERE product_id = ?", (existing["product_id"],)
+    )["n"]
+    if remaining <= 1:
+        raise ValueError("A product needs at least one variant — delete the product instead.")
+    db.execute("DELETE FROM product_variants WHERE id = ?", (variant_id,))
+    audit.record(actor, "product.variant_delete", "variant", variant_id)

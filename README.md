@@ -9,7 +9,7 @@ The whole app exists to make one flow feel real:
 Two modes, no account needed for either:
 
 - **Customer** — browse, search, filter, product detail with live availability and stock freshness, reserve with a QR code, track the reservation, wishlist, back-in-stock alerts, multi-item availability check, store info.
-- **Store** — dashboard, inventory with add/remove/adjust, reservation queue (accept, ready, reject, complete), barcode scanner, sales and inventory analytics.
+- **Store** — dashboard, inventory with add/remove/adjust, reservation queue (accept, ready, reject, complete), barcode scanner, sales and inventory analytics, shop settings.
 
 ## Running it
 
@@ -54,17 +54,87 @@ Three details that matter more than the numbers:
 
 Counters live in memory alongside sessions: a restart forgives everyone, and multiple worker processes would each keep their own tally. Both need a shared store before this runs anywhere real.
 
+## Shop types
+
+The customer showcase is not one fixed layout — `stores.type` picks it, and an owner or manager changes it from **Store → Settings**:
+
+- **General** (default) — the flat curated homepage this app started with: Popular, Available now, Recommended.
+- **Grocery** — the catalogue grouped into aisles by category, availability surfaced up top.
+- **Mall** — the catalogue grouped into wings by brand, framed as a directory of shops.
+
+All three read the same `products`/`inventory` tables; only `public/js/views/customer.js`'s `homeView` dispatch and `public/js/app.js`'s landing logo change per type. Adding a fourth type means adding an entry to `TYPE_INFO` (client) and `SHOWCASE_TYPES` (`services/store.py`) plus a `*Body()` renderer — the settings screen, validation and audit trail need no changes. Changing the type is `settings.edit` (owner-only); viewing the settings screen is `settings.view` (owner and manager).
+
+## Installing as an app
+
+The showcase is an installable PWA: `public/manifest.webmanifest` and `public/sw.js` (registered from `app.js`) let a phone "Add to Home Screen" it and open it full-screen, no browser chrome. The service worker only ever caches the static shell (HTML/CSS/JS/icons) with a stale-while-revalidate strategy — it never touches anything under `/api/`, so stock and reservations are never served stale from a cache. On Chrome/Android, `beforeinstallprompt` is captured and surfaced as an "Install app" button on the landing screen; iOS has no such event, so installing there is the manual share-sheet "Add to Home Screen" (the `apple-touch-icon` and `apple-mobile-web-app-*` meta tags in `index.html` are for that path).
+
+## The parent platform integration
+
+This store can be paired with a parent platform (ShopCRM's head office is the
+one in production use, but anything speaking the same two endpoints works):
+the parent **pushes its catalogue** down and **pulls stock levels** back for
+chain-wide reporting. This store keeps owning everything else — inventory
+counts, reservations, staff, customers, orders — the parent never touches
+`on_hand` directly; the only path that ever changes it is
+`inventory.change_stock`, called locally, the same as any other goods-in.
+
+A different trust boundary from the rest of the API: the caller is head
+office's own software, not a person, authenticated by `X-Parent-Token`
+against `PARENT_TOKEN` rather than a staff session. Unset by default — the
+two endpoints answer `404` until it is configured, the same posture
+`DEMO_MODE` takes when off.
+
+```bash
+POST /api/parent/catalog   # { store_id?, products: [{parent_ref, name, ..., variants: [{parent_ref, sku, price, ...}]}] }
+GET  /api/parent/inventory?branch_id=...
+```
+
+Products and variants are matched by `parent_ref` — the parent's own id for
+each row — never by name or SKU, both of which a shopkeeper can legitimately
+rename here. A push with no `parent_ref` on an item is refused outright, and
+the whole push is one transaction: a malformed item partway through a large
+payload must not leave the catalogue half updated.
+
+See `services/parent_sync.py` for the write/read logic and
+`api/routes.py`'s "Parent platform integration" section for the routes.
+
+## Adding and editing the catalogue locally
+
+Owners and managers can also add or edit a product straight from the
+Inventory screen — the **+ Add** button in its header, or **Edit** on any
+row. Before this there was no write path for a product at all: `product.
+create`/`product.edit` had been in the permission matrix from the start, but
+nothing implemented them, so the only way one ever existed was `seed.py` or a
+push from the parent platform. Product and its one variant are saved
+together in the same form, matching how this app already has no screen that
+edits them apart. A variant's SKU is checked for a collision before saving,
+and deleting a product's last variant is refused — delete the product
+instead, since a product with no variant left is a shelf label nothing can
+ever sell.
+
+The same form takes a **photo** — a real file picker, not a pasted URL. There
+is no upload endpoint or file storage anywhere in this app, so a photo is
+read client-side with `FileReader` and saved as a `data:` URL in the existing
+`image_url` column: a string that happens to decode to a picture, which
+needed nothing new on the server. Capped at 1.5 MB client-side, since nothing
+else bounds how large that string can get. Saving without touching the photo
+leaves it as it was; the **Remove** button clears it explicitly — those are
+deliberately different things, so an ordinary rename can never silently wipe
+the picture.
+
 ## Tests
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-217 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness, secret redaction, login rate limiting, plus regressions pinning the stock arithmetic, reservation lifecycle and search.
+274 tests covering the permission matrix, unauthorized access over HTTP, role changes, disabled and deleted accounts, audit completeness, secret redaction, login rate limiting, the parent-platform catalogue push/inventory pull and its isolation from staff sessions, local product/variant create and edit (including photo save/keep/clear semantics), plus regressions pinning the stock arithmetic, reservation lifecycle and search, and the hold allowance -- what spends it, what deliberately does not, the three-days-running warning and the pass that extends a day.
 
 Demo data seeds itself on first boot: 8 products, 18 variants with SKUs and barcodes, stock at varied ages, customers, live reservations and a week of past sales. Delete `data/store.db` to start over.
 
 Optional `.env` (see `.env.example`): `PORT`, `STORE_ID`, `RESERVATION_MINUTES`, `DEMO_MODE`, `TRUST_PROXY`, `DEMO_*_PASSWORD`, and SMTP settings for back-in-stock emails.
+
+Hold fair-use is tunable the same way: `HOLD_TYPES_PER_DAY`, `HOLD_REPEAT_STREAK_DAYS`, `HOLD_PASS_EXTRA_TYPES`, `HOLD_PASS_PRICE`, and `HOLD_PASS_QR_PAYLOAD` — any payment string; setting it replaces the built-in placeholder QR and drops its DEMO label. Keep a real one in `.env`, never in `config.py`: `.env` is gitignored and a payment handle is not something to commit.
 
 ## Layout
 
@@ -77,6 +147,7 @@ services/         all business logic — no Flask imports here
 api/              HTTP routes + staff auth — no business rules here
 public/js/api.js  the one place that talks to the backend
 public/js/views/  one module per screen
+public/manifest.webmanifest, public/sw.js, public/icons/   installable-app plumbing
 ```
 
 **The split matters.** Services never import Flask, and routes never contain rules. On the client, only `api.js` calls `fetch`. When the parent platform's real API arrives, `api.js` and the service internals change; the screens do not.
@@ -86,6 +157,8 @@ public/js/views/  one module per screen
 - `inventory` holds `on_hand` and `reserved` per variant per branch. **Available = on_hand − reserved.**
 - **A reservation holds stock immediately**, not when staff accept it. Otherwise two customers could reserve the last unit. Completing a pickup is what finally removes it from `on_hand`.
 - Rejecting, cancelling or expiring a reservation releases the hold.
+- **Holds are rationed: five product types per shopper per day** (`services/holds.py`). A hold costs the shopper nothing but takes a unit off the shelf for an hour, so the allowance is spent on *distinct types* — re-holding the same item is free, quantity is not counted, and cancelling does not refund the slot (or the cap would be avoidable by holding and cancelling in a loop). Usage is counted from `reservations` rather than kept as a total, so it cannot drift from its own history. Enforced at the route, not in `reservations.create()`: it is a shopfront policy, and staff placing a hold at the counter are not rationed by it.
+- Filling the allowance **three days running** warns the shopper that charges may apply. A live streak, not a tally over a window — one quiet day ends it. Running out offers a payment QR (`HOLD_PASS_QR_PAYLOAD`) that grants one more allowance for the day; nothing verifies the payment, so the button under it stands in for a gateway webhook calling `holds.grant_pass()`.
 - Every change writes to `inventory_movements`, which is append-only — the dashboard reads from those events rather than from a running total, so any number can be traced to what caused it.
 - **Freshness travels with every count.** A quantity is only as good as when it was taken, so the age is shown everywhere and anything older than 3 hours is flagged as possibly outdated.
 

@@ -16,6 +16,11 @@ export const state = {
   wishlistIds: new Set(),
   unseenNotifications: 0,
   pendingReservations: 0,
+  openReservations: 0,
+  categories: [],
+  // variant_id -> the still-running reservation holding it, so a product
+  // card can show "Reserved for you" instead of offering another hold.
+  holds: new Map(),
   // Who is signed in to store mode, and what the server will let them do.
   // Used only to lay out the UI -- every one of these is enforced again
   // server-side, so a tampered set buys nothing.
@@ -58,10 +63,13 @@ export function exitMode() {
 
 /** Loaded once at boot: things every screen needs before it can render. */
 export async function bootstrap() {
-  const [config, store, me] = await Promise.all([api.config(), api.store(), api.me()]);
+  const [config, store, me, categories] = await Promise.all([
+    api.config(), api.store(), api.me(), api.categories().catch(() => []),
+  ]);
   state.config = config;
   state.store = store;
   state.me = me;
+  state.categories = categories;
   if (store && store.accent_color) {
     document.documentElement.style.setProperty('--accent', store.accent_color);
   }
@@ -71,12 +79,16 @@ export async function bootstrap() {
 export async function refreshCustomerBadges() {
   if (!state.me) return;
   try {
-    const [wl, notes] = await Promise.all([
+    const [wl, notes, reservations] = await Promise.all([
       api.wishlist(state.me.id),
       api.notifications(state.me.id, true),
+      api.reservations({ customer_id: state.me.id }),
     ]);
     state.wishlistIds = new Set(wl.map((p) => p.id));
     state.unseenNotifications = notes.length;
+    const open = reservations.filter((r) => r.is_open);
+    state.openReservations = open.length;
+    state.holds = new Map(open.map((r) => [r.variant_id, r]));
   } catch {
     /* badges are decoration; never block a screen on them */
   }

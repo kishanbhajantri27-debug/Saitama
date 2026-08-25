@@ -10,6 +10,11 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  -- Drives which showcase layout the customer side renders: 'general' is the
+  -- flat product-grid showcase this app started as; other values (grocery,
+  -- mall, ...) switch to their own layout in the client. Unrecognised values
+  -- fall back to 'general' there, so this never needs a CHECK constraint.
+  type TEXT NOT NULL DEFAULT 'general',
   tagline TEXT DEFAULT '',
   rating REAL DEFAULT 0,
   city TEXT DEFAULT '',
@@ -37,15 +42,23 @@ CREATE TABLE IF NOT EXISTS products (
   category TEXT DEFAULT '',
   description TEXT DEFAULT '',
   -- Words a shopper might use that appear nowhere else on the record:
-  -- "shoes" for a trainer, "charger" for an adapter. Without these, a search
-  -- for "Nike shoes" finds nothing, because no field contains "shoes".
+  -- "badam" for almonds, "atta" for wheat flour. Without these, a search
+  -- for "badam" finds nothing, because no field contains that word.
   tags TEXT DEFAULT '',
   image_url TEXT DEFAULT '',
   rating REAL DEFAULT 0,
   rating_count INTEGER DEFAULT 0,
   popularity INTEGER DEFAULT 0,
+  -- The parent platform's own id for this product, when one pushed it here.
+  -- NULL for anything created locally or by seed.py. This, not name or SKU,
+  -- is what a later push matches against -- a shopkeeper renaming "Rice 5kg"
+  -- to "Basmati Rice 5kg" at head office must update this row, not create a
+  -- second one beside it.
+  parent_ref TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_parent_ref
+  ON products(store_id, parent_ref) WHERE parent_ref IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS product_variants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,8 +68,11 @@ CREATE TABLE IF NOT EXISTS product_variants (
   barcode TEXT UNIQUE,
   label TEXT DEFAULT '',            -- "Black - Size 9"
   price REAL NOT NULL DEFAULT 0,
+  parent_ref TEXT,                  -- see products.parent_ref
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variants_parent_ref
+  ON product_variants(store_id, parent_ref) WHERE parent_ref IS NOT NULL;
 
 -- Stock lives per variant per branch. Availability is on_hand - reserved, and
 -- freshness comes from updated_at, which is what drives the status colours.
@@ -157,6 +173,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     ('pending','accepted','ready_for_pickup','completed','rejected','expired','cancelled')),
   note TEXT DEFAULT '',
   expires_at TEXT,
+  prepaid INTEGER NOT NULL DEFAULT 0,  -- bought online; never auto-expires, sale already recorded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -221,6 +238,21 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A shopper who bought more hold allowance for one day. Only the grant is
+-- stored: how much of the allowance is already spent is counted from the
+-- reservations themselves, so the two can never drift apart.
+CREATE TABLE IF NOT EXISTS hold_passes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,                -- UTC date the pass applies to
+  extra_types INTEGER NOT NULL DEFAULT 5,
+  reference TEXT DEFAULT '',        -- what was scanned; 'demo' when nothing was
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_hold_passes_day ON hold_passes(customer_id, day);
+CREATE INDEX IF NOT EXISTS idx_reservations_customer ON reservations(customer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
 CREATE INDEX IF NOT EXISTS idx_movements_variant ON inventory_movements(variant_id);
@@ -241,13 +273,18 @@ def connect():
     return conn
 
 
-# Bumped whenever the schema changes shape. Everything in this database is
-# regenerated demo data, so a mismatch is resolved by rebuilding rather than by
-# writing a migration for data nobody needs to keep.
-SCHEMA_VERSION = 3
+# Bumped whenever an existing table changes shape. Everything in this database
+# is regenerated demo data, so a mismatch is resolved by rebuilding rather than
+# by writing a migration for data nobody needs to keep.
+#
+# Purely additive changes deliberately do NOT bump it. Every statement above is
+# CREATE ... IF NOT EXISTS, so a new table appears on the next start by itself,
+# whereas bumping would drop all fifteen tables -- taking the store's own
+# catalogue edits and uploaded product photos with them.
+SCHEMA_VERSION = 5
 
 TABLES = [
-    "notifications", "wishlists", "invoices", "payments", "orders",
+    "hold_passes", "notifications", "wishlists", "invoices", "payments", "orders",
     "reservations", "inventory_movements", "inventory", "product_variants",
     "products", "employees", "customers", "branches", "stores", "audit_log",
 ]
@@ -266,10 +303,23 @@ def init():
             _drop_all(conn)
 
         conn.executescript(SCHEMA)
+        _migrate_columns(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_columns(conn):
+    """New columns on existing tables, added without a version bump.
+
+    Each is guarded so it only runs once, per the SCHEMA_VERSION comment
+    above: an existing demo database keeps its rows instead of being dropped
+    for a change this small.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(reservations)")}
+    if "prepaid" not in cols:
+        conn.execute("ALTER TABLE reservations ADD COLUMN prepaid INTEGER NOT NULL DEFAULT 0")
 
 
 def _drop_all(conn):

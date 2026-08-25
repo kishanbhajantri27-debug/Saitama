@@ -1,5 +1,6 @@
 // Presentation primitives: escaping, formatting, toasts, sheets, skeletons,
 // charts. No knowledge of products, stock or reservations lives here.
+import { svgIcon } from './icons.js';
 
 export const h = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -36,7 +37,7 @@ export function statusLine(stock, { showUnits = true } = {}) {
 
 export function staleWarning(stock) {
   if (!stock || !stock.freshness || !stock.freshness.stale) return '';
-  return `<div class="stalewarn"><span>⚠️</span><span>Stock may be outdated — ${h(stock.freshness.label.toLowerCase())}. Please confirm with the store.</span></div>`;
+  return `<div class="stalewarn"><span>${svgIcon('warning')}</span><span>Stock may be outdated — ${h(stock.freshness.label.toLowerCase())}. Please confirm with the store.</span></div>`;
 }
 
 /* ---------- toasts ---------- */
@@ -71,8 +72,19 @@ export function sheet(innerHtml, { onMount } = {}) {
 
   const panel = bg.querySelector('.sheet');
   if (onMount) onMount(panel, close);
-  const focusable = panel.querySelector('input, select, button');
-  if (focusable) setTimeout(() => focusable.focus(), 60);
+
+  // Focus something to fill in, but never a button. Autofocusing one arms it:
+  // a focused button is activated by Enter or Space, so a single stray
+  // keypress could confirm -- or pay -- before the sheet had even been read.
+  // With no field, the panel itself takes focus, which still gives the
+  // keyboard somewhere to Tab and Escape from.
+  const field = panel.querySelector('input, select, textarea');
+  if (field) {
+    setTimeout(() => field.focus(), 60);
+  } else {
+    panel.setAttribute('tabindex', '-1');
+    setTimeout(() => panel.focus(), 60);
+  }
   return { close, panel };
 }
 
@@ -95,11 +107,26 @@ export function confirmSheet({ title, body, confirmLabel = 'Confirm', danger = f
 }
 
 /* ---------- states ---------- */
-export const empty = ({ icon = '📦', title, body = '', action = '' }) =>
+export const empty = ({ icon = svgIcon('box'), title, body = '', action = '' }) =>
   `<div class="empty"><div class="ic">${icon}</div><h3>${h(title)}</h3><p>${h(body)}</p>${action}</div>`;
 
 export const errorBox = (message, retryId = '') =>
   `<div class="errbox">${h(message)}${retryId ? ` <button class="btn sm ghost" id="${retryId}" style="margin-left:8px">Try again</button>` : ''}</div>`;
+
+/** Losing the store is the one failure a shopper can act on, so it gets a
+    screen of its own rather than a strip of red text. */
+export const offlineState = (retryId = '') => `
+  <div class="offline">
+    <img class="offline-art" src="/images/offline.png" alt="" width="320" height="203">
+    <h3>Cannot reach the store</h3>
+    <p>We're having trouble connecting to our store.<br>Please check your internet connection and try again.</p>
+    ${retryId ? `<button class="btn lg" id="${retryId}">${svgIcon('refresh')} Try again</button>` : ''}
+  </div>`;
+
+/** Picks how a failure should look. A dropped connection is worth a full
+    panel; a 404 or a server fault is not, and reads better as one line. */
+export const failureState = (err, retryId = '') =>
+  (err && err.status === 0 ? offlineState(retryId) : errorBox((err && err.message) || String(err), retryId));
 
 export const skeletonGrid = (n = 6) =>
   `<div class="prodgrid">${'<div class="sk card"></div>'.repeat(n)}</div>`;
@@ -157,9 +184,9 @@ const clockTime = (ts) => {
 };
 
 const KIND_ICON = {
-  STOCK_RECEIVED: '📥', STOCK_ADJUSTMENT: '✏️', SALE: '💰', RETURN: '↩️',
-  RESERVATION: '🟡', RESERVATION_ACCEPTED: '🔵', RESERVATION_READY: '🟢',
-  RESERVATION_RELEASE: '⚪', PICKUP: '✅',
+  STOCK_RECEIVED: svgIcon('inbox'), STOCK_ADJUSTMENT: svgIcon('edit'), SALE: svgIcon('money'), RETURN: svgIcon('undo'),
+  RESERVATION: svgIcon('dot-warn'), RESERVATION_ACCEPTED: svgIcon('dot-info'), RESERVATION_READY: svgIcon('dot-ok'),
+  RESERVATION_RELEASE: svgIcon('dot-neutral'), PICKUP: svgIcon('check-circle'),
 };
 
 export function timeline(rows, { emptyText = 'No activity yet.' } = {}) {
@@ -184,9 +211,11 @@ export function timeline(rows, { emptyText = 'No activity yet.' } = {}) {
 /* ---------- theme ---------- */
 const THEME_KEY = 'theme';
 export function initTheme() {
+  // The showroom opens in daylight. A grocery floor is meant to look bright
+  // and fresh, so the OS's dark preference does not decide this one -- only
+  // an explicit choice from the toggle does.
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved) document.documentElement.dataset.theme = saved;
-  else if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
 }
 export function toggleTheme() {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

@@ -223,7 +223,7 @@ def levels(branch_id=None):
     """Every variant with its stock, for the inventory screen."""
     branch_id = branch_id or config.BRANCH_ID
     rows = db.query(
-        """SELECT v.id AS variant_id, v.sku, v.barcode, v.label, v.price,
+        """SELECT v.id AS variant_id, v.sku, v.barcode, v.label, v.price, v.parent_ref,
                   p.id AS product_id, p.name AS product_name, p.brand, p.category, p.image_url,
                   i.on_hand, i.reserved, i.updated_at
            FROM product_variants v

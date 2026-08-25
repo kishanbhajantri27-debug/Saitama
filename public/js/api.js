@@ -7,10 +7,68 @@
 const BASE = '/api';
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data = null) {
     super(message);
     this.status = status;
+    // The parsed body, so a caller that knows the shape of a particular
+    // failure can act on it instead of re-reading the sentence we printed.
+    this.data = data;
   }
+}
+
+/* ---------- offline fallback ----------
+   Browsing (the catalogue, categories, the store's own details, what this
+   shopper has wishlisted or been notified about) is safe to serve from
+   what was last seen even with nobody to ask -- worst case a price, a stock
+   count or a badge count is a little behind, which the app already has a
+   vocabulary for (see staleWarning()). Reservations are the one exception:
+   a hold's status can flip (accepted, expired, picked up by someone else's
+   staff action) at any moment, so showing a stale one offline could read as
+   "still yours" when it is not. Those, and anything that spends real stock
+   or money -- reserving, buying, cancelling -- are left off this list and
+   simply fail offline, same as sw.js leaves every /api/ request uncached
+   for the same reason. */
+const CACHEABLE_PREFIXES = ['/config', '/store', '/me', '/categories', '/products', '/lookup'];
+const CACHEABLE_SUFFIXES = ['/wishlist', '/notifications'];
+
+function isCacheable(path) {
+  if (CACHEABLE_PREFIXES.some((p) => path === p || path.startsWith(p + '/') || path.startsWith(p + '?'))) {
+    return true;
+  }
+  const base = path.split('?')[0];
+  return CACHEABLE_SUFFIXES.some((suffix) => base.endsWith(suffix));
+}
+
+const cacheKey = (path) => `apicache:${path}`;
+
+function readCache(path) {
+  try {
+    const raw = localStorage.getItem(cacheKey(path));
+    return raw ? JSON.parse(raw).data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCache(path, data) {
+  try {
+    localStorage.setItem(cacheKey(path), JSON.stringify({ data, savedAt: Date.now() }));
+  } catch {
+    // Storage full or disabled -- offline browsing just does not work this
+    // time, which is no worse than not having the cache at all.
+  }
+}
+
+// Broadcasts whether the last real request got through, so the shell (see
+// app.js) can show a single "you are offline" banner instead of every screen
+// discovering it alone. Always dispatched, even when the value did not
+// change from last time -- a confirmed successful request is the strongest
+// signal there is, and the shell uses every one of these to correct its own
+// first guess from navigator.onLine, which can misreport at boot and only
+// reflects the network interface anyway (a Wi-Fi router with no internet
+// still reads "online").
+function setOffline(offline) {
+  window.dispatchEvent(new CustomEvent('connectivitychange', { detail: { offline } }));
 }
 
 // Store-mode token. Kept in sessionStorage so a refresh keeps staff signed in
@@ -27,6 +85,10 @@ async function call(path, { method = 'GET', body, staff = false } = {}) {
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (staff || auth.isStaff) headers['X-Staff-Token'] = auth.token;
 
+  // Query strings pick out a search or a category, so they are part of what
+  // makes a GET worth caching separately -- only the path itself is not.
+  const cacheable = method === 'GET' && isCacheable(path);
+
   let res;
   try {
     res = await fetch(BASE + path, {
@@ -35,8 +97,15 @@ async function call(path, { method = 'GET', body, staff = false } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
+    setOffline(true);
+    if (cacheable) {
+      const cached = readCache(path);
+      if (cached !== undefined) return cached;
+    }
     throw new ApiError('Cannot reach the store. Check your connection.', 0);
   }
+
+  setOffline(false);
 
   if (res.status === 204) return null;
 
@@ -45,14 +114,18 @@ async function call(path, { method = 'GET', body, staff = false } = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
 
   if (!res.ok) {
-    throw new ApiError((data && data.error) || `Request failed (${res.status})`, res.status);
+    throw new ApiError(
+      (data && data.error) || `Request failed (${res.status})`, res.status, data);
   }
+  if (cacheable) writeCache(path, data);
   return data;
 }
 
 export const api = {
   config: () => call('/config'),
   store: () => call('/store'),
+  storeTypes: () => call('/store/types'),
+  updateStore: (fields) => call('/store', { method: 'PUT', staff: true, body: fields }),
   me: () => call('/me'),
 
   products: (params = {}) => {
@@ -62,6 +135,13 @@ export const api = {
     return call(`/products${q ? '?' + q : ''}`);
   },
   product: (id) => call(`/products/${id}`),
+  createProduct: (fields) => call('/products', { method: 'POST', staff: true, body: fields }),
+  updateProduct: (id, fields) => call(`/products/${id}`, { method: 'PUT', staff: true, body: fields }),
+  deleteProduct: (id) => call(`/products/${id}`, { method: 'DELETE', staff: true }),
+  addVariant: (productId, fields) =>
+    call(`/products/${productId}/variants`, { method: 'POST', staff: true, body: fields }),
+  updateVariant: (id, fields) => call(`/variants/${id}`, { method: 'PUT', staff: true, body: fields }),
+  deleteVariant: (id) => call(`/variants/${id}`, { method: 'DELETE', staff: true }),
   categories: () => call('/categories'),
   lookup: (code) => call(`/lookup?code=${encodeURIComponent(code)}`),
   checkMany: (items) => call('/check-many', { method: 'POST', body: { items } }),
@@ -80,6 +160,10 @@ export const api = {
     call(`/customers/${customerId}/notifications/seen`, { method: 'POST' }),
 
   reserve: (payload) => call('/reservations', { method: 'POST', body: payload }),
+  buyNow: (payload) => call('/reservations/buy-now', { method: 'POST', body: payload }),
+  holdQuota: (customerId) => call(`/customers/${customerId}/hold-quota`),
+  buyHoldPass: (customerId, reference = 'demo') =>
+    call(`/customers/${customerId}/hold-pass`, { method: 'POST', body: { reference } }),
   reservations: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')

@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["server.js"],
       "port": 3000
+    },
+    {
+      "name": "store-showcase",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["app.py"],
+      "port": 3000
     }
   ]
 }

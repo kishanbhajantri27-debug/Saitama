@@ -36,81 +36,261 @@ def _announce(generated):
 STORE = {
     "id": config.STORE_ID,
     "name": "CMR Store",
-    "tagline": "Electronics, apparel and everyday essentials",
+    "type": "grocery",
+    "tagline": "Grains, dry fruits, dairy and everyday grocery essentials",
     "rating": 4.6,
     "city": "Bengaluru",
     "address": "12 MG Road, Bengaluru 560001",
-    "phone": "+91 98765 43210",
+    "phone": "+91 80733 29699",
     "email": "hello@cmrstore.example",
     "opens_at": "09:30",
     "closes_at": "21:30",
     "lat": 12.9752,
     "lng": 77.6050,
-    "accent_color": "#3d5afe",
+    "accent_color": "#2e7d32",
 }
 
 # (name, brand, category, rating, count, popularity, description, tags, image, [variants])
 # variant = (label, sku, barcode, price, on_hand, age_minutes)
 PRODUCTS = [
-    ("Nike Air Max", "Nike", "Footwear", 4.7, 812, 98,
-     "Cushioned everyday trainer with a visible Air unit and breathable mesh upper.",
-     "shoes sneakers trainers footwear running sports black white",
-     "airmax", [
-         ("Black - Size 8", "NIK-AM-088", "8901234500018", 4999, 2, 6),
-         # 5 on hand less the demo reservation below reads as "4 available,
-         # updated 2 minutes ago" -- the exact line in the spec's walkthrough.
-         ("Black - Size 9", "NIK-AM-092", "8901234500025", 4999, 5, 2),
-         ("White - Size 10", "NIK-AM-101", "8901234500032", 5299, 0, 240),
+    ('India Gate Basmati Rice', 'India Gate', 'Grains', 4.6, 940, 96,
+     'Long-grain aged basmati that stays separate and fluffy after cooking.',
+     'rice basmati grains staple kitchen 5kg',
+     'rice_basmati', [
+         ('5 kg', 'IG-BAS-5K', '8901234500193', 699, 14, 8),
+         ('1 kg', 'IG-BAS-1K', '8901234500200', 159, 30, 5),
      ]),
-    ("Levi's 511 Jeans", "Levi's", "Apparel", 4.4, 431, 82,
-     "Slim-fit stretch denim that holds its shape through the day.",
-     "jeans denim pants trousers bottoms slim blue indigo black",
-     "jeans", [
-         ("Indigo - W32", "LV-511-32", "8901234500049", 3299, 2, 14),
-         ("Indigo - W34", "LV-511-34", "8901234500056", 3299, 6, 9),
-         ("Black - W32", "LV-511-B32", "8901234500063", 3499, 1, 35),
+    ('Sona Masoori Rice', 'Fortune', 'Grains', 4.4, 512, 84,
+     'Light, aromatic everyday rice that cooks quickly and reheats well.',
+     'rice sona masoori grains staple daily',
+     'rice_sona', [
+         ('5 kg', 'FT-SM-5K', '8901234500207', 549, 9, 12),
+         ('10 kg', 'FT-SM-10K', '8901234500214', 1049, 4, 40),
      ]),
-    ("Samsung 25W Charger", "Samsung", "Electronics", 4.5, 1204, 95,
-     "Super-fast USB-C wall adapter with PD support. Cable sold separately.",
-     "charger adapter usb-c fast charging power plug electronics white black",
-     "charger", [
-         ("White", "SAM-25W", "8901234500070", 1499, 0, 45),
-         ("Black", "SAM-25W-B", "8901234500087", 1499, 12, 4),
+    ('Aashirvaad Whole Wheat Atta', 'Aashirvaad', 'Grains', 4.7, 1340, 97,
+     '100% whole wheat flour ground from selected grain for soft rotis.',
+     'atta flour wheat chakki roti grains staple',
+     'atta', [
+         ('5 kg', 'ASH-ATT-5K', '8901234500221', 289, 22, 3),
+         ('10 kg', 'ASH-ATT-10K', '8901234500228', 559, 6, 18),
      ]),
-    ("Bluetooth Headphones", "Sony", "Electronics", 4.6, 967, 91,
-     "Over-ear wireless headphones with active noise cancelling and 30-hour battery.",
-     "headphones earphones headset wireless bluetooth audio music noise cancelling",
-     "headphones", [
-         ("Midnight Blue", "SNY-BT-MB", "8901234500094", 8999, 3, 11),
-         ("Graphite", "SNY-BT-GR", "8901234500100", 8999, 1, 22),
+    ('Thick Poha (Flattened Rice)', 'Nature Fresh', 'Grains', 4.2, 214, 71,
+     'Sun-dried flattened rice for a quick breakfast poha or chivda.',
+     'poha flattened rice breakfast grains',
+     'poha', [
+         ('500 g', 'NF-POH-500', '8901234500235', 65, 26, 6),
      ]),
-    ("Everyday Backpack", "Wildcraft", "Bags", 4.3, 288, 74,
-     "28-litre daypack with a padded laptop sleeve and water-resistant base.",
-     "backpack bag rucksack daypack laptop school college travel",
-     "backpack", [
-         ("Charcoal", "WC-BP-CH", "8901234500117", 2199, 7, 18),
-         ("Olive", "WC-BP-OL", "8901234500124", 2199, 4, 30),
+    ('Toor Dal (Split Pigeon Pea)', 'Tata Sampann', 'Millets & Pulses', 4.6, 780, 93,
+     'Unpolished toor dal with the husk intact, cooks soft without losing nutrients.',
+     'toor dal arhar pulses lentils protein',
+     'dal_toor', [
+         ('1 kg', 'TS-TOOR-1K', '8901234500242', 175, 18, 4),
+         ('500 g', 'TS-TOOR-500', '8901234500249', 92, 10, 20),
      ]),
-    ("Cotton T-Shirt", "Allen Solly", "Apparel", 4.2, 512, 69,
-     "Combed cotton crew neck that survives a hot wash without losing shape.",
-     "tshirt t-shirt shirt tee top cotton casual black white plain",
-     "tshirt", [
-         ("Black - M", "AS-TS-BM", "8901234500131", 899, 9, 7),
-         ("Black - L", "AS-TS-BL", "8901234500148", 899, 5, 7),
-         ("White - M", "AS-TS-WM", "8901234500155", 899, 0, 320),
+    ('Moong Dal (Split Green Gram)', 'Tata Sampann', 'Millets & Pulses', 4.5, 601, 88,
+     'Split and de-husked moong, light on the stomach and quick to cook.',
+     'moong dal pulses lentils protein',
+     'dal_moong', [
+         ('1 kg', 'TS-MOONG-1K', '8901234500256', 165, 15, 9),
      ]),
-    ("Ruled Notebook", "Classmate", "Stationery", 4.1, 176, 58,
-     "200-page A5 ruled notebook with a stitched spine that lies flat.",
-     "notebook notepad diary journal stationery paper writing school",
-     "notebook", [
-         ("A5 - 200 pages", "CM-NB-200", "8901234500162", 149, 24, 3),
+    ('Chana Dal (Split Bengal Gram)', 'Tata Sampann', 'Millets & Pulses', 4.4, 388, 79,
+     'Nutty, high-protein split chana for dal, snacks and sweets.',
+     'chana dal pulses lentils protein',
+     'dal_chana', [
+         ('1 kg', 'TS-CHANA-1K', '8901234500263', 135, 20, 11),
      ]),
-    ("Running Shoes", "Adidas", "Footwear", 4.5, 640, 87,
-     "Lightweight road runner with responsive foam and a breathable knit upper.",
-     "shoes sneakers trainers footwear running sports jogging grey",
-     "runner", [
-         ("Grey - Size 9", "ADI-RN-092", "8901234500179", 3799, 3, 13),
-         ("Grey - Size 10", "ADI-RN-102", "8901234500186", 3799, 1, 55),
+    ('Ragi Flour (Finger Millet)', 'Patanjali', 'Millets & Pulses', 4.3, 266, 73,
+     'Stone-ground finger millet flour, a calcium-rich base for rotis and porridge.',
+     'ragi flour millet finger millet healthy',
+     'ragi', [
+         ('1 kg', 'PTJ-RAGI-1K', '8901234500270', 99, 12, 15),
+     ]),
+    ('Foxtail Millet (Thinai)', 'Patanjali', 'Millets & Pulses', 4.2, 173, 65,
+     'A low-GI millet that swaps in for rice in everyday meals.',
+     'foxtail millet thinai grains healthy',
+     'millet', [
+         ('500 g', 'PTJ-FOX-500', '8901234500277', 89, 16, 22),
+     ]),
+    ('California Almonds', 'Happilo', 'Dry Fruits & Nuts', 4.6, 1020, 94,
+     'Crunchy, whole California almonds packed for freshness.',
+     'almonds badam dry fruits nuts snack',
+     'almonds', [
+         ('250 g', 'HAP-ALM-250', '8901234500284', 299, 3, 6),
+         ('500 g', 'HAP-ALM-500', '8901234500291', 549, 8, 2),
+     ]),
+    ('Cashews (Kaju) W240', 'Happilo', 'Dry Fruits & Nuts', 4.5, 812, 90,
+     'Whole, creamy-white cashew kernels, lightly roasted or raw.',
+     'cashew kaju dry fruits nuts snack',
+     'cashews', [
+         ('250 g', 'HAP-CSH-250', '8901234500298', 249, 2, 3),
+         ('500 g', 'HAP-CSH-500', '8901234500305', 469, 6, 19),
+     ]),
+    ('Raisins (Kishmish)', 'Nutraj', 'Dry Fruits & Nuts', 4.3, 405, 77,
+     'Naturally sun-dried seedless raisins, sweet and chewy.',
+     'raisins kishmish dry fruits nuts sweet',
+     'raisins', [
+         ('250 g', 'NTJ-RAI-250', '8901234500312', 129, 24, 5),
+     ]),
+    ('Premium Mixed Nuts', 'Happilo', 'Dry Fruits & Nuts', 4.7, 690, 92,
+     'An everyday trail mix of almonds, cashews, walnuts and raisins.',
+     'mixed nuts trail mix dry fruits snack healthy',
+     'mixednuts', [
+         ('250 g', 'HAP-MIX-250', '8901234500319', 265, 11, 10),
+         ('500 g', 'HAP-MIX-500', '8901234500326', 499, 5, 26),
+     ]),
+    ('Walnuts (Akhrot) Kernels', 'Nutraj', 'Dry Fruits & Nuts', 4.4, 301, 75,
+     'Light-halved walnut kernels, rich and slightly bitter-sweet.',
+     'walnuts akhrot dry fruits nuts brain food',
+     'walnuts', [
+         ('250 g', 'NTJ-WAL-250', '8901234500333', 349, 7, 14),
+     ]),
+    ('A2 Cow Milk', 'Amul', 'Milk Products', 4.7, 1450, 97,
+     'Fresh, pasteurised A2 cow milk delivered chilled every morning.',
+     'milk a2 cow dairy fresh daily',
+     'milk', [
+         ('1 L', 'AML-MILK-1L', '8901234500340', 65, 20, 1),
+         ('500 ml', 'AML-MILK-500', '8901234500347', 35, 30, 1),
+     ]),
+    ('Fresh Paneer', 'Amul', 'Milk Products', 4.6, 560, 89,
+     'Soft, malai-rich paneer cubes made from full-cream milk.',
+     'paneer cottage cheese dairy fresh',
+     'paneer', [
+         ('200 g', 'AML-PNR-200', '8901234500354', 89, 14, 2),
+         ('500 g', 'AML-PNR-500', '8901234500361', 209, 6, 2),
+     ]),
+    ('Fresh Curd (Dahi)', 'Mother Dairy', 'Milk Products', 4.5, 480, 85,
+     'Thick, set curd cultured fresh daily from toned milk.',
+     'curd dahi yogurt dairy fresh',
+     'curd', [
+         ('400 g', 'MD-CRD-400', '8901234500368', 45, 22, 1),
+         ('1 kg', 'MD-CRD-1K', '8901234500375', 99, 9, 1),
+     ]),
+    ('Table Butter', 'Amul', 'Milk Products', 4.6, 640, 87,
+     'Creamy salted butter, churned from fresh cream.',
+     'butter dairy salted spread',
+     'butter', [
+         ('100 g', 'AML-BTR-100', '8901234500382', 58, 16, 4),
+         ('500 g', 'AML-BTR-500', '8901234500389', 265, 5, 21),
+     ]),
+    ('Desi Cow Ghee', 'Amul', 'Ghee & Oils', 4.8, 990, 96,
+     'Pure, aromatic cow ghee slow-cooked in small batches.',
+     'ghee cow desi dairy pure clarified butter',
+     'ghee', [
+         ('500 ml', 'AML-GHEE-500', '8901234500396', 349, 5, 2),
+         ('1 L', 'AML-GHEE-1L', '8901234500403', 649, 4, 33),
+     ]),
+    ('Organic A2 Ghee', 'Patanjali', 'Ghee & Oils', 4.7, 420, 90,
+     'Bilona-method A2 ghee from grass-fed cows, no additives.',
+     'ghee organic a2 pure dairy',
+     'ghee_organic', [
+         ('500 ml', 'PTJ-GHEE-500', '8901234500410', 599, 6, 17),
+     ]),
+    ('Sunflower Oil', 'Fortune', 'Ghee & Oils', 4.4, 733, 86,
+     'Refined sunflower oil, light on the palate and heart-friendly.',
+     'sunflower oil cooking refined',
+     'oil_sunflower', [
+         ('1 L', 'FT-SUN-1L', '8901234500417', 149, 18, 6),
+         ('5 L', 'FT-SUN-5L', '8901234500424', 699, 0, 45),
+     ]),
+    ('Kachi Ghani Mustard Oil', 'Fortune', 'Ghee & Oils', 4.3, 288, 78,
+     'Cold-pressed mustard oil with a sharp, traditional pungency.',
+     'mustard oil kachi ghani cooking',
+     'oil_mustard', [
+         ('1 L', 'FT-MUS-1L', '8901234500431', 179, 13, 9),
+     ]),
+    ('Turmeric Powder (Haldi)', 'Everest', 'Spices & Masalas', 4.5, 560, 88,
+     'Vivid, high-curcumin turmeric ground from selected fingers.',
+     'turmeric haldi powder spice masala',
+     'turmeric', [
+         ('200 g', 'EVR-HLD-200', '8901234500438', 55, 28, 5),
+     ]),
+    ('Red Chilli Powder', 'Everest', 'Spices & Masalas', 4.4, 470, 84,
+     'Deep red, medium-hot chilli powder for everyday cooking.',
+     'chilli powder red masala spice hot',
+     'chilipowder', [
+         ('200 g', 'EVR-CHL-200', '8901234500445', 65, 21, 7),
+     ]),
+    ('Garam Masala', 'MDH', 'Spices & Masalas', 4.6, 690, 91,
+     'A warm blend of roasted whole spices ground for everyday curries.',
+     'garam masala spice blend curry',
+     'garammasala', [
+         ('100 g', 'MDH-GRM-100', '8901234500452', 79, 19, 4),
+     ]),
+    ('Coriander Powder (Dhania)', 'MDH', 'Spices & Masalas', 4.3, 340, 76,
+     'Freshly milled coriander seeds with a citrusy, earthy aroma.',
+     'coriander dhania powder spice masala',
+     'corianderpowder', [
+         ('200 g', 'MDH-DHN-200', '8901234500459', 49, 24, 8),
+     ]),
+    ('Organic Rolled Oats', 'Saffola', 'Organic Range', 4.5, 410, 83,
+     'Whole-grain rolled oats for a fibre-rich breakfast porridge.',
+     'oats organic rolled breakfast healthy',
+     'oats', [
+         ('500 g', 'SAF-OAT-500', '8901234500466', 165, 17, 5),
+         ('1 kg', 'SAF-OAT-1K', '8901234500473', 299, 9, 29),
+     ]),
+    ('Organic Honey', 'Dabur', 'Organic Range', 4.6, 720, 89,
+     '100% pure, unadulterated honey with no added sugar.',
+     'honey organic pure natural sweetener',
+     'honey', [
+         ('500 g', 'DBR-HNY-500', '8901234500480', 249, 12, 6),
+         ('250 g', 'DBR-HNY-250', '8901234500487', 139, 20, 2),
+     ]),
+    ('Organic Jaggery (Gur)', 'Patanjali', 'Organic Range', 4.3, 260, 74,
+     'Traditional cane jaggery, unrefined and chemical-free.',
+     'jaggery gur organic sweetener natural',
+     'jaggery', [
+         ('500 g', 'PTJ-GUR-500', '8901234500494', 89, 15, 10),
+     ]),
+    ('Assam Tea Leaves', 'Tata Tea', 'Beverages', 4.5, 880, 90,
+     'Strong, malty CTC tea leaves from the gardens of Assam.',
+     'tea leaves assam beverage chai',
+     'tea', [
+         ('250 g', 'TT-ASM-250', '8901234500501', 145, 26, 3),
+         ('500 g', 'TT-ASM-500', '8901234500508', 275, 12, 12),
+     ]),
+    ('Filter Coffee Powder', 'Continental', 'Beverages', 4.4, 512, 85,
+     'A classic South Indian blend of coffee and chicory.',
+     'coffee filter powder beverage',
+     'coffee', [
+         ('200 g', 'CTL-COF-200', '8901234500515', 129, 18, 6),
+     ]),
+    ('Mixed Fruit Juice', 'Real', 'Beverages', 4.2, 340, 72,
+     'No-added-sugar mixed fruit juice, ready to pour and serve.',
+     'juice fruit beverage drink',
+     'juice', [
+         ('1 L', 'RL-JUC-1L', '8901234500522', 110, 14, 2),
+     ]),
+    ('Dishwash Liquid Gel', 'Vim', 'Household', 4.4, 610, 82,
+     'Concentrated lemon dishwash gel that cuts grease fast.',
+     'dishwash liquid gel household cleaning',
+     'dishwash', [
+         ('500 ml', 'VIM-DSH-500', '8901234500529', 99, 23, 4),
+     ]),
+    ('Detergent Powder', 'Surf Excel', 'Household', 4.5, 705, 86,
+     'Stain-removing detergent powder safe for daily wash.',
+     'detergent powder laundry household cleaning',
+     'detergent', [
+         ('1 kg', 'SE-DET-1K', '8901234500536', 135, 16, 7),
+         ('3 kg', 'SE-DET-3K', '8901234500543', 375, 6, 31),
+     ]),
+    ('Infant Cereal', 'Cerelac', 'Baby Care', 4.5, 240, 80,
+     'Wheat-based fortified cereal for babies from 6 months.',
+     'baby cereal infant food wheat',
+     'babycereal', [
+         ('300 g', 'CRL-INF-300', '8901234500550', 219, 9, 3),
+     ]),
+    ('Festive Grocery Hamper', 'CMR Store', 'Combo Packs', 4.7, 96, 68,
+     'A gift-ready hamper of ghee, dry fruits, tea and sweets for festive gifting.',
+     'combo hamper gift festive grocery bundle',
+     'hamper', [
+         ('Standard', 'CMR-HMP-01', '8901234500557', 1499, 8, 40),
+     ]),
+    ('Daily Essentials Combo', 'CMR Store', 'Combo Packs', 4.5, 158, 70,
+     'Rice, atta, dal and oil bundled together at a combo price.',
+     'combo pack essentials bundle grocery kit',
+     'basket', [
+         ('Standard', 'CMR-CMB-01', '8901234500564', 899, 11, 12),
      ]),
 ]
 
@@ -133,17 +313,17 @@ EMPLOYEES = [
 
 # (customer index, sku, quantity, status)
 RESERVATIONS = [
-    (0, "NIK-AM-092", 1, "pending"),
-    (1, "SNY-BT-MB", 1, "accepted"),
+    (0, "AML-GHEE-500", 1, "pending"),
+    (1, "HAP-CSH-250", 1, "accepted"),
 ]
 
 # (sku, quantity, days_ago) -- past sales so the dashboard and trend are not flat
 PAST_SALES = [
-    ("SAM-25W-B", 2, 0), ("CM-NB-200", 3, 0), ("AS-TS-BM", 1, 0),
-    ("NIK-AM-088", 1, 0), ("WC-BP-CH", 1, 1), ("LV-511-34", 2, 1),
-    ("SNY-BT-GR", 1, 2), ("ADI-RN-092", 1, 2), ("CM-NB-200", 5, 3),
-    ("AS-TS-BL", 2, 3), ("SAM-25W-B", 1, 4), ("WC-BP-OL", 1, 5),
-    ("LV-511-32", 1, 5), ("NIK-AM-092", 1, 6),
+    ("AML-MILK-1L", 6, 0), ("ASH-ATT-5K", 2, 0), ("EVR-HLD-200", 3, 0),
+    ("IG-BAS-5K", 1, 0), ("TS-TOOR-1K", 2, 1), ("AML-PNR-200", 3, 1),
+    ("HAP-ALM-250", 1, 2), ("TT-ASM-250", 2, 2), ("AML-MILK-500", 8, 3),
+    ("MD-CRD-400", 4, 3), ("FT-SUN-1L", 2, 4), ("SAF-OAT-500", 1, 5),
+    ("DBR-HNY-250", 1, 5), ("AML-GHEE-500", 1, 6),
 ]
 
 
@@ -159,9 +339,9 @@ def run(force=False):
     with db.transaction() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO stores
-                 (id, name, tagline, rating, city, address, phone, email,
+                 (id, name, type, tagline, rating, city, address, phone, email,
                   opens_at, closes_at, lat, lng, accent_color)
-               VALUES (:id, :name, :tagline, :rating, :city, :address, :phone, :email,
+               VALUES (:id, :name, :type, :tagline, :rating, :city, :address, :phone, :email,
                        :opens_at, :closes_at, :lat, :lng, :accent_color)""",
             STORE,
         )
@@ -304,9 +484,9 @@ def run(force=False):
         conn.execute(
             """INSERT INTO notifications (store_id, customer_id, variant_id, kind, title, body)
                VALUES (?, ?, ?, 'back_in_stock', ?, ?)""",
-            (config.STORE_ID, customer_ids[2], sku_to_variant["SAM-25W"],
-             "We will tell you when Samsung 25W Charger is back",
-             "Samsung 25W Charger (White) is out of stock right now."),
+            (config.STORE_ID, customer_ids[2], sku_to_variant["FT-SUN-5L"],
+             "We will tell you when Sunflower Oil is back",
+             "Sunflower Oil (5 L) is out of stock right now."),
         )
 
     return True

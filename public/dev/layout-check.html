@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout check</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 24px; font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+         background: #fdfaf3; color: #241f16; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.lede { color: #8a8168; margin: 0 0 20px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 999px; cursor: pointer;
+           background: #2e7d32; color: #fff; padding: 10px 22px; }
+  button:disabled { opacity: .5; cursor: progress; }
+  table { border-collapse: collapse; width: 100%; margin-top: 20px; background: #fff;
+          border: 1px solid #ece2cd; border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #f4ecda; font-size: .88rem;
+           vertical-align: top; }
+  th { background: #faf6ec; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: #8a8168; }
+  tr:last-child td { border-bottom: 0; }
+  .ok { color: #2e7d32; font-weight: 800; }
+  .bad { color: #a63428; font-weight: 800; }
+  ul { margin: 4px 0 0; padding-left: 18px; color: #a63428; }
+  #summary { margin-top: 18px; font-weight: 800; }
+  iframe { position: fixed; left: -99999px; top: 0; border: 0; }
+</style>
+
+<h1>Layout check</h1>
+<p class="lede">
+  Loads the customer screens at each width and asserts the things that have actually broken
+  before. Run it after any change to <code>app.css</code> or a view.
+</p>
+<button id="run">Run check</button>
+<div id="summary"></div>
+<table id="out" hidden><thead>
+  <tr><th>Width</th><th>Route</th><th>Result</th></tr>
+</thead><tbody></tbody></table>
+
+<script>
+// Deliberately includes the awkward in-between widths, not just the tidy
+// device sizes -- every fault so far has turned up between the breakpoints
+// rather than at them.
+const WIDTHS = [320, 390, 430, 600, 768, 900, 1024, 1074, 1200, 1280, 1440, 1700, 1920];
+const ROUTES = ['#/home', '#/showcase', '#/categories', '#/search/dal', '#/p/1', '#/cart', '#/wishlist'];
+
+// Each rule returns a list of complaints. Keep them specific: a rule that
+// cannot say what broke is a rule nobody will act on.
+function audit(doc, win) {
+  const de = doc.documentElement;
+  const vw = de.clientWidth;
+  const out = [];
+  const seen = new Set();
+  const say = (m) => { if (!seen.has(m)) { seen.add(m); out.push(m); } };
+
+  if (de.scrollWidth > vw + 1) say(`page scrolls sideways (${de.scrollWidth} > ${vw})`);
+
+  // Horizontal scrollers are meant to run past the edge; nothing else is.
+  const scrollers = [...doc.querySelectorAll('.hlist,.chips,.cat-row,.tablewrap')];
+  doc.querySelectorAll('body *').forEach((el) => {
+    const b = el.getBoundingClientRect();
+    if (b.width < 1 || b.height < 1) return;
+    if (scrollers.some((s) => s.contains(el))) return;
+    if (b.right > vw + 1.5) say(`${el.tagName.toLowerCase()}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'} sticks out past the right edge`);
+  });
+
+  doc.querySelectorAll('h1,h2,h3,.name,.cat-name,.price,.pdp-name').forEach((el) => {
+    if (el.scrollWidth > el.clientWidth + 1) say(`text clipped: "${el.textContent.trim().slice(0, 30)}"`);
+  });
+
+  const h1 = doc.querySelector('.hero-text h1');
+  if (h1) {
+    const lh = parseFloat(win.getComputedStyle(h1).lineHeight) || 1;
+    const lines = Math.round(h1.getBoundingClientRect().height / lh);
+    if (lines > 2) say(`hero headline broke onto ${lines} lines`);
+  }
+  doc.querySelectorAll('.hero-cta .btn').forEach((b) => {
+    if (b.getBoundingClientRect().width < 80) say('hero button squashed');
+  });
+
+  doc.querySelectorAll('.prod .thumb,.cat-thumb,.pdp-stage,.line .thumb,.cart-line .thumb,.hero-jar')
+    .forEach((tile) => {
+      if (win.getComputedStyle(tile).backgroundImage === 'none') say('product tile lost its backdrop');
+      const img = tile.querySelector('img');
+      if (!img || !img.complete || !img.naturalWidth) return;
+      const t = tile.getBoundingClientRect(), i = img.getBoundingClientRect();
+      if (i.bottom > t.bottom + 1 || i.top < t.top - 1 || i.right > t.right + 1 || i.left < t.left - 1) {
+        say('product image clipped by its tile');
+      }
+      if (win.getComputedStyle(img).objectFit !== 'contain') say('product image not using object-fit: contain');
+    });
+
+  doc.querySelectorAll('.cart-line .meta,.line .meta,.pdp-info,.appbar-title').forEach((m) => {
+    if (m.getBoundingClientRect().width < 60) say(`${m.className.split(' ')[0]} column collapsed`);
+  });
+
+  // Siblings sitting on top of each other. This is the fault the first
+  // version of this file was blind to: it only looked for things leaving the
+  // viewport, so two panels landing in the same place counted as clean.
+  // Absolutely positioned children are skipped -- overlapping is their job.
+  [['.appbar .wrap > *', 'app bar'], ['.prodgrid > *', 'product grid'],
+   ['.cat-grid > *', 'aisle grid'], ['.shop-home > *', 'home columns'],
+   ['.pdp > *', 'product detail columns'], ['.cart-line > *', 'basket row'],
+   ['.line > *', 'list row'], ['.feature-grid > *', 'promises'],
+   ['.hero-banner > *', 'hero'], ['.cardactions > *', 'card buttons']
+  ].forEach(([sel, label]) => {
+    const els = [...doc.querySelectorAll(sel)].filter((e) => {
+      const b = e.getBoundingClientRect();
+      return b.width > 1 && b.height > 1 && win.getComputedStyle(e).position !== 'absolute';
+    });
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+        const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ox > 2 && oy > 2) say(`${label}: two pieces overlap by ${Math.round(ox)}x${Math.round(oy)}px`);
+      }
+    }
+  });
+
+  // Scroll containers nested inside scroll containers. Every one of these
+  // draws its own scrollbar, and a panel with three tracks running down it
+  // looks broken however correct the boxes are.
+  const nested = [...doc.querySelectorAll('body *')].filter((el) => {
+    const o = win.getComputedStyle(el);
+    const scrolls = /(auto|scroll)/.test(o.overflowY) || /(auto|scroll)/.test(o.overflowX);
+    return scrolls && el.scrollHeight > el.clientHeight + 2;
+  });
+  nested.forEach((outer) => {
+    const inner = nested.filter((el) => el !== outer && outer.contains(el));
+    if (inner.length) {
+      say(`${outer.className.toString().split(' ')[0] || outer.tagName.toLowerCase()} scrolls and so do ${inner.length} thing(s) inside it`);
+    }
+  });
+
+  // The action bar must not cover the content it sits over.
+  const bar = doc.querySelector('.stickybar');
+  if (bar && win.getComputedStyle(bar).display !== 'none') {
+    const pad = parseFloat(win.getComputedStyle(doc.querySelector('.screen')).paddingBottom) || 0;
+    if (bar.getBoundingClientRect().height > pad) say('sticky bar taller than the space reserved for it');
+  }
+  return out;
+}
+
+function probe(width, route) {
+  return new Promise((resolve) => {
+    const f = document.createElement('iframe');
+    f.style.width = width + 'px';
+    f.style.height = '900px';
+    f.src = '/' + route;
+    f.onload = () => setTimeout(() => {
+      let fails;
+      try { fails = audit(f.contentDocument, f.contentWindow); }
+      catch (err) { fails = ['could not inspect: ' + err.message]; }
+      f.remove();
+      resolve({ width, route, fails });
+    }, 1600);
+    document.body.appendChild(f);
+  });
+}
+
+document.getElementById('run').onclick = async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const table = document.getElementById('out');
+  const body = table.querySelector('tbody');
+  body.innerHTML = '';
+  table.hidden = false;
+  const summary = document.getElementById('summary');
+  let broken = 0;
+
+  for (const width of WIDTHS) {
+    for (const route of ROUTES) {
+      summary.textContent = `checking ${route} at ${width}px…`;
+      const r = await probe(width, route);
+      if (r.fails.length) broken++;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${width}px</td><td><code>${route}</code></td>`
+        + (r.fails.length
+            ? `<td class="bad">${r.fails.length} problem${r.fails.length > 1 ? 's' : ''}<ul>${r.fails.map((f) => `<li>${f}</li>`).join('')}</ul></td>`
+            : `<td class="ok">clean</td>`);
+      body.appendChild(tr);
+    }
+  }
+  summary.innerHTML = broken
+    ? `<span class="bad">${broken} of ${WIDTHS.length * ROUTES.length} combinations have problems.</span>`
+    : `<span class="ok">All ${WIDTHS.length * ROUTES.length} combinations clean.</span>`;
+  btn.disabled = false;
+};
+</script>

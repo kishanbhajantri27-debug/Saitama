@@ -27,6 +27,9 @@ TEST_PASSWORDS = {
 for _user, _pw in TEST_PASSWORDS.items():
     os.environ[f"DEMO_{_user.upper()}_PASSWORD"] = _pw
 
+TEST_PARENT_TOKEN = "test-parent-token"
+os.environ["PARENT_TOKEN"] = TEST_PARENT_TOKEN
+
 import db  # noqa: E402
 import seed  # noqa: E402
 from services import ratelimit, staff  # noqa: E402
@@ -111,10 +114,15 @@ def staff_headers(login):
 
 
 @pytest.fixture
+def parent_headers():
+    return {"X-Parent-Token": TEST_PARENT_TOKEN}
+
+
+@pytest.fixture
 def a_variant():
     """A variant with stock, for inventory and reservation tests."""
     from services import catalog
-    return catalog.find_by_code("NIK-AM-092")
+    return catalog.find_by_code("AML-GHEE-500")
 
 
 @pytest.fixture

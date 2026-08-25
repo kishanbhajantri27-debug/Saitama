@@ -5,10 +5,10 @@ from flask import Blueprint, jsonify, request, send_file
 import config
 import db
 import seed
-from api.auth import (current_actor, issue_token, require_permission, require_staff,
-                      revoke, revoke_all_for)
-from services import (analytics, audit, catalog, customers, inventory, notifications,
-                      ratelimit, reservations, staff, store)
+from api.auth import (current_actor, issue_token, require_parent_token, require_permission,
+                      require_staff, revoke, revoke_all_for)
+from services import (analytics, audit, catalog, customers, holds, inventory, notifications,
+                      parent_sync, ratelimit, reservations, staff, store)
 from services.security import (NotAuthenticated, PermissionDenied, matrix,
                                permissions_for)
 
@@ -41,6 +41,11 @@ def _permission_denied(err):
 @api_bp.errorhandler(NotAuthenticated)
 def _not_authenticated(err):
     return jsonify(error=str(err)), 401
+
+
+@api_bp.errorhandler(parent_sync.CatalogPushError)
+def _catalog_push_error(err):
+    return jsonify(error=str(err)), 400
 
 
 # ---------- Session / store ----------
@@ -152,6 +157,21 @@ def get_store():
     return jsonify(store.profile())
 
 
+@api_bp.put("/store")
+@require_permission("settings.edit")
+def update_store():
+    try:
+        return jsonify(store.update(current_actor(), _body()))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+
+
+@api_bp.get("/store/types")
+def store_types():
+    """The showcase layouts the client can offer in the settings form."""
+    return jsonify(store.SHOWCASE_TYPES)
+
+
 @api_bp.get("/config")
 def get_config():
     """What the client needs to render before it knows anything else."""
@@ -162,6 +182,7 @@ def get_config():
         reservation_minutes=config.RESERVATION_MINUTES,
         low_stock_at=config.LOW_STOCK_AT,
         demo_mode=config.DEMO_MODE,
+        hold_types_per_day=config.HOLD_TYPES_PER_DAY,
     )
 
 
@@ -183,6 +204,80 @@ def get_product(product_id):
     if not product:
         return jsonify(error="product not found"), 404
     return jsonify(product)
+
+
+@api_bp.post("/products")
+@require_permission("product.create", entity_type="product")
+def create_product():
+    body = _body()
+    try:
+        product = catalog.create_product(
+            current_actor(),
+            name=body.get("name", ""),
+            brand=body.get("brand", ""),
+            category=body.get("category", ""),
+            description=body.get("description", ""),
+            tags=body.get("tags", ""),
+            image_url=body.get("image_url", ""),
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(product), 201
+
+
+@api_bp.put("/products/<int:product_id>")
+@require_permission("product.edit", entity_type="product")
+def update_product(product_id):
+    try:
+        product = catalog.update_product(current_actor(), product_id, **_body())
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(product)
+
+
+@api_bp.delete("/products/<int:product_id>")
+@require_permission("product.delete", entity_type="product")
+def delete_product(product_id):
+    try:
+        catalog.delete_product(current_actor(), product_id)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return "", 204
+
+
+@api_bp.post("/products/<int:product_id>/variants")
+@require_permission("product.edit", entity_type="variant")
+def add_variant(product_id):
+    body = _body()
+    try:
+        variant = catalog.add_variant(
+            current_actor(), product_id,
+            sku=body.get("sku", ""), barcode=body.get("barcode", ""),
+            label=body.get("label", ""), price=body.get("price", 0),
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(variant), 201
+
+
+@api_bp.put("/variants/<int:variant_id>")
+@require_permission("product.edit", entity_type="variant")
+def update_variant(variant_id):
+    try:
+        variant = catalog.update_variant(current_actor(), variant_id, **_body())
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(variant)
+
+
+@api_bp.delete("/variants/<int:variant_id>")
+@require_permission("product.delete", entity_type="variant")
+def delete_variant(variant_id):
+    try:
+        catalog.delete_variant(current_actor(), variant_id)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return "", 204
 
 
 @api_bp.get("/categories")
@@ -269,12 +364,49 @@ def create_reservation():
             body.get("name", "Guest"), body.get("phone", ""), body.get("email", ""))
         customer_id = customer["id"]
 
+    # Fair use is a shopfront policy, not an inventory rule, so it is enforced
+    # here rather than inside reservations.create(): staff placing a hold at
+    # the counter are doing the store's own work and are not rationed by it.
+    from api.auth import is_staff
+    if not is_staff():
+        try:
+            holds.check(customer_id, variant_id)
+        except holds.HoldLimitReached as err:
+            return jsonify(error=str(err), reason="hold_limit", quota=err.quota), 429
+
     result = reservations.create(
         variant_id=variant_id,
         customer_id=customer_id,
         quantity=_int(body.get("quantity"), 1) or 1,
         note=body.get("note", ""),
         minutes=_int(body.get("minutes")),
+    )
+    return jsonify(result), 201
+
+
+@api_bp.post("/reservations/buy-now")
+def buy_now_reservation():
+    """Instant purchase, still picked up in-store.
+
+    Not gated by holds.check(): the fair-use limit rations free holds, and
+    this shopper is paying (albeit in mock money), so it does not apply.
+    """
+    body = _body()
+    variant_id = _int(body.get("variant_id"))
+    if not variant_id:
+        return jsonify(error="variant_id is required"), 400
+
+    customer_id = _int(body.get("customer_id"))
+    if not customer_id:
+        customer = customers.find_or_create(
+            body.get("name", "Guest"), body.get("phone", ""), body.get("email", ""))
+        customer_id = customer["id"]
+
+    result = reservations.buy_now(
+        variant_id=variant_id,
+        customer_id=customer_id,
+        quantity=_int(body.get("quantity"), 1) or 1,
+        note=body.get("note", ""),
     )
     return jsonify(result), 201
 
@@ -306,20 +438,55 @@ def get_reservation_by_code(code):
     return jsonify(row)
 
 
+def _qr_svg(payload):
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+
+    img = qrcode.make(payload, image_factory=SvgPathImage, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    buf.seek(0)
+    return send_file(buf, mimetype="image/svg+xml")
+
+
 @api_bp.get("/reservations/<int:reservation_id>/qr.svg")
 def reservation_qr(reservation_id):
     row = reservations.get(reservation_id)
     if not row:
         return jsonify(error="reservation not found"), 404
+    return _qr_svg(row["code"])
 
-    import qrcode
-    from qrcode.image.svg import SvgPathImage
 
-    img = qrcode.make(row["code"], image_factory=SvgPathImage, box_size=10, border=2)
-    buf = io.BytesIO()
-    img.save(buf)
-    buf.seek(0)
-    return send_file(buf, mimetype="image/svg+xml")
+# ---------- Hold allowance ----------
+
+@api_bp.get("/customers/<int:customer_id>/hold-quota")
+def hold_quota(customer_id):
+    return jsonify(holds.quota(customer_id))
+
+
+@api_bp.get("/holds/pass.qr.svg")
+def hold_pass_qr():
+    """The code a shopper scans to buy more allowance.
+
+    Rendered from config, so pointing HOLD_PASS_QR_PAYLOAD at the store's real
+    payment string turns this into a live QR without touching any code.
+    """
+    return _qr_svg(config.HOLD_PASS_QR_PAYLOAD)
+
+
+@api_bp.post("/customers/<int:customer_id>/hold-pass")
+def buy_hold_pass(customer_id):
+    """Grant the extra allowance a pass buys.
+
+    In the demo this is the button under the QR, because nothing is watching
+    for a payment to land. Against a real gateway the webhook calls it instead
+    and this route goes away -- which is why the granting lives in the service
+    and not in here.
+    """
+    if not customers.get(customer_id):
+        return jsonify(error="customer not found"), 404
+    body = _body()
+    return jsonify(holds.grant_pass(customer_id, body.get("reference", "demo"))), 201
 
 
 @api_bp.post("/reservations/<int:reservation_id>/cancel")
@@ -559,3 +726,34 @@ def analytics_today():
 @require_permission("analytics.view")
 def analytics_overview():
     return jsonify(analytics.overview())
+
+
+# ---------- Parent platform integration ----------
+#
+# A different trust boundary from everything above: the caller is a machine
+# speaking for head office, authenticated by a shared token rather than a
+# staff session (see require_parent_token). Deliberately narrow -- catalogue
+# in, stock out, nothing else. No customer, reservation, staff or payment
+# data is reachable here, the same reasoning that keeps the public search
+# surface on the parent's own platform blind to a shop's private numbers.
+
+
+@api_bp.post("/parent/catalog")
+@require_parent_token
+def parent_push_catalog():
+    body = _body()
+    store_id = (body.get("store_id") or "").strip()
+    if store_id and store_id != config.STORE_ID:
+        return jsonify(error=f"this installation is store {config.STORE_ID!r}"), 400
+
+    counts = parent_sync.upsert_catalog(config.STORE_ID, body.get("products") or [])
+    audit.record(None, "parent.catalog_push", "store", config.STORE_ID, counts)
+    return jsonify(ok=True, **counts)
+
+
+@api_bp.get("/parent/inventory")
+@require_parent_token
+def parent_pull_inventory():
+    branch_id = request.args.get("branch_id") or None
+    rows = parent_sync.inventory_for_parent(branch_id)
+    return jsonify(store_id=config.STORE_ID, branch_id=branch_id or config.BRANCH_ID, items=rows)

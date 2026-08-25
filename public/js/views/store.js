@@ -4,6 +4,7 @@ import {
   barChart, confirmSheet, empty, errorBox, h, money, rankedBars,
   sheet, skeletonLines, statusLine, timeline, toast,
 } from '../ui.js';
+import { svgIcon } from '../icons.js';
 
 /* ---------- sign in ---------- */
 
@@ -11,15 +12,15 @@ import {
 // Tapping one asks the server for a demo session, which it grants only while
 // DEMO_MODE is on.
 const DEMO_ROLES = [
-  ['owner', '👑', 'Owner', 'Full access, including staff and reset'],
-  ['manager', '🧑‍💼', 'Manager', 'Stock-takes, rejections, analytics'],
-  ['staff', '🧑‍🔧', 'Staff', 'Counter work: stock moves and pickups'],
+  ['owner', svgIcon('crown'), 'Owner', 'Full access, including staff and reset'],
+  ['manager', svgIcon('bag'), 'Manager', 'Stock-takes, rejections, analytics'],
+  ['staff', svgIcon('wrench'), 'Staff', 'Counter work: stock moves and pickups'],
 ];
 
 export function staffLoginView(mount) {
   mount.innerHTML = `
     <div class="wrap landing">
-      <div class="logo">🏪</div>
+      <div class="logo">${svgIcon('store')}</div>
       <h1>Store sign-in</h1>
       <p class="lede">Manage inventory, reservations and sales for ${h(state.store?.name || 'this store')}.</p>
 
@@ -47,7 +48,7 @@ export function staffLoginView(mount) {
               <span style="color:var(--muted)">›</span>
             </button>`).join('')}
         </div>` : ''}
-      <button class="btn ghost block" id="back" style="margin-top:14px">← Back</button>
+      <button class="btn ghost block" id="back" style="margin-top:14px">${svgIcon('chevron-left')} Back</button>
     </div>`;
 
   const user = mount.querySelector('#user');
@@ -131,12 +132,13 @@ export async function dashboardView(mount) {
       <div class="sec">
         <div class="sec-head"><h2>Quick actions</h2></div>
         <div class="quickgrid">
-          <button class="quick" data-go="/store/scan"><span class="ic">📷</span>Scan</button>
-          <button class="quick" data-go="/store/inventory"><span class="ic">📦</span>Inventory</button>
-          <button class="quick" data-go="/store/reservations"><span class="ic">🎟️</span>Reservations</button>
-          ${may('analytics.view') ? '<button class="quick" data-go="/store/analytics"><span class="ic">📈</span>Sales</button>' : ''}
-          ${may('inventory.history.view') ? '<button class="quick" data-go="/store/history"><span class="ic">🕓</span>History</button>' : ''}
-          ${may('audit.view') ? '<button class="quick" data-go="/store/audit"><span class="ic">🛡️</span>Audit</button>' : ''}
+          <button class="quick" data-go="/store/scan"><span class="ic">${svgIcon('scan')}</span>Scan</button>
+          <button class="quick" data-go="/store/inventory"><span class="ic">${svgIcon('box')}</span>Inventory</button>
+          <button class="quick" data-go="/store/reservations"><span class="ic">${svgIcon('ticket')}</span>Reservations</button>
+          ${may('analytics.view') ? `<button class="quick" data-go="/store/analytics"><span class="ic">${svgIcon('chart-line')}</span>Sales</button>` : ''}
+          ${may('inventory.history.view') ? `<button class="quick" data-go="/store/history"><span class="ic">${svgIcon('clock')}</span>History</button>` : ''}
+          ${may('audit.view') ? `<button class="quick" data-go="/store/audit"><span class="ic">${svgIcon('shield')}</span>Audit</button>` : ''}
+          ${may('settings.view') ? `<button class="quick" data-go="/store/settings"><span class="ic">${svgIcon('gear')}</span>Settings</button>` : ''}
         </div>
       </div>
 
@@ -209,7 +211,7 @@ export async function reservationsView(mount) {
     try {
       const rows = await api.reservations({ status: filter });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '🎟️', title: `No ${filter === 'all' ? '' : filter} reservations`, body: 'New customer reservations land here.' });
+        list.innerHTML = empty({ icon: svgIcon('ticket'), title: `No ${filter === 'all' ? '' : filter} reservations`, body: 'New customer reservations land here.' });
         return;
       }
       list.innerHTML = `<div class="stack">${rows.map(card).join('')}</div>`;
@@ -225,6 +227,7 @@ export async function reservationsView(mount) {
       <div class="row between" style="align-items:flex-start">
         <div style="min-width:0">
           <div class="row" style="gap:8px"><span class="badge ${h(r.status)}">${h(r.status.replace(/_/g, " "))}</span>
+            ${r.prepaid ? `<span class="badge ok">paid online</span>` : ''}
             <span class="sku" style="font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted)">${h(r.code)}</span></div>
           <div style="font-weight:800;margin-top:8px">${h(r.customer_name)}</div>
           <div style="font-size:.84rem;color:var(--ink-2)">${h(r.product_name)} · ${h(r.variant_label)}</div>
@@ -291,9 +294,12 @@ export async function inventoryView(mount) {
     <div class="wrap" style="padding-top:16px">
       <div class="row between" style="margin-bottom:12px">
         <h2>Inventory</h2>
-        <button class="btn sm soft" id="scan">📷 Scan</button>
+        <div class="row" style="gap:8px">
+          ${may('product.create') ? '<button class="btn sm" id="add">+ Add</button>' : ''}
+          <button class="btn sm soft" id="scan">${svgIcon('scan')} Scan</button>
+        </div>
       </div>
-      <div class="searchbox"><span class="ic">🔍</span><input id="q" type="search" placeholder="Search name, SKU or barcode"></div>
+      <div class="searchbox"><span class="ic">${svgIcon('search')}</span><input id="q" type="search" placeholder="Search name, SKU or barcode"></div>
       <div class="chips" style="margin-top:10px" id="f"></div>
       <div class="row" style="margin-top:10px;gap:8px">
         <select class="input" id="sort" style="max-width:190px">
@@ -308,10 +314,12 @@ export async function inventoryView(mount) {
     </div>`;
 
   mount.querySelector('#scan').onclick = () => navigate('/store/scan');
+  const addBtn = mount.querySelector('#add');
+  if (addBtn) addBtn.onclick = () => openProductSheet(null, load);
   const list = mount.querySelector('#list');
 
   const drawFilters = () => {
-    mount.querySelector('#f').innerHTML = [['all', 'All'], ['available', '🟢 In stock'], ['limited', '🟡 Low'], ['out', '🔴 Out']]
+    mount.querySelector('#f').innerHTML = [['all', 'All'], ['available', `${svgIcon('dot-ok')} In stock`], ['limited', `${svgIcon('dot-warn')} Low`], ['out', `${svgIcon('dot-bad')} Out`]]
       .map(([k, l]) => `<button class="chip ${status === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('');
     mount.querySelectorAll('[data-f]').forEach((b) => {
       b.onclick = () => { status = b.dataset.f; drawFilters(); load(); };
@@ -329,7 +337,7 @@ export async function inventoryView(mount) {
     try {
       const rows = await api.inventory({ q, status, sort });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '📦', title: 'Nothing matches', body: 'Try a different search or filter.' });
+        list.innerHTML = empty({ icon: svgIcon('box'), title: 'Nothing matches', body: 'Try a different search or filter.' });
         return;
       }
       list.innerHTML = `
@@ -342,7 +350,10 @@ export async function inventoryView(mount) {
                 <td style="font-family:ui-monospace,monospace;font-size:.78rem">${h(r.sku)}</td>
                 <td><strong>${r.on_hand}</strong>${r.reserved ? ` <span style="color:var(--muted);font-size:.76rem">(${r.reserved} held)</span>` : ''}</td>
                 <td>${statusLine(r, { showUnits: false })}</td>
-                <td><button class="btn sm ghost" data-adj="${r.variant_id}">Update</button></td>
+                <td style="white-space:nowrap">
+                  <button class="btn sm ghost" data-adj="${r.variant_id}">Update</button>
+                  ${may('product.edit') ? `<button class="btn sm ghost" data-edit="${r.variant_id}">Edit</button>` : ''}
+                </td>
               </tr>`).join('')}</tbody>
           </table>
         </div>`;
@@ -350,6 +361,12 @@ export async function inventoryView(mount) {
         b.onclick = () => {
           const row = rows.find((r) => r.variant_id === Number(b.dataset.adj));
           openStockSheet(row, load);
+        };
+      });
+      list.querySelectorAll('[data-edit]').forEach((b) => {
+        b.onclick = () => {
+          const row = rows.find((r) => r.variant_id === Number(b.dataset.edit));
+          openProductSheet(row, load);
         };
       });
     } catch (err) {
@@ -415,6 +432,185 @@ export function openStockSheet(row, onDone) {
   });
 }
 
+/** Add a product (row omitted) or edit one (row is an inventory row, which
+ * already carries both its product and its one variant). The two are saved
+ * together -- this app has no screen that edits them apart. */
+// Kept modest on purpose: this is a demo-quality app with no file storage or
+// upload pipeline anywhere in it, so a photo is stored the same way an
+// image_url always has been -- as a string in that column. A data: URL is
+// just a string that happens to decode to a picture, which means "add a
+// photo" needed nothing new on the server at all. The cap exists because
+// nothing else in the app bounds how large that string can get.
+const MAX_PHOTO_BYTES = 1.5 * 1024 * 1024;
+
+function readPhoto(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('That is not an image file.'));
+    if (file.size > MAX_PHOTO_BYTES) return reject(new Error('Photos must be under 1.5 MB.'));
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export function openProductSheet(row, onDone) {
+  const editing = Boolean(row);
+  // null = leave the photo as it is; '' = explicitly cleared; a data: URL =
+  // a new photo was chosen. Distinct from the other fields, which are always
+  // sent, because re-sending the same image on every save just to leave it
+  // unchanged would make an ordinary rename several megabytes of traffic.
+  let photoDataUrl = null;
+
+  sheet(`
+    <h3>${editing ? h(row.product_name) : 'Add a product'}</h3>
+    <div class="row" style="gap:12px;align-items:center;margin-bottom:10px">
+      <div id="photoPreview" style="width:64px;height:64px;border-radius:10px;overflow:hidden;background:var(--surface-2);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:1.4rem">
+        ${editing && row.image_url ? `<img src="${h(row.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : svgIcon('box')}
+      </div>
+      <div style="flex:1">
+        <label class="btn sm ghost" style="cursor:pointer;display:inline-block">
+          ${svgIcon('camera')} ${editing && row.image_url ? 'Change photo' : 'Add photo'}
+          <input type="file" id="photo" accept="image/*" style="display:none">
+        </label>
+        ${editing && row.image_url ? '<button class="btn sm ghost" id="removePhoto" style="margin-left:6px">Remove</button>' : ''}
+        <div id="photoErr" style="color:var(--danger);font-size:.78rem;margin-top:4px"></div>
+      </div>
+    </div>
+    <label class="field">
+      <span class="lbl">Name</span>
+      <input class="input" id="name" value="${editing ? h(row.product_name) : ''}" placeholder="e.g. Rice 5kg">
+    </label>
+    <div class="row" style="gap:8px">
+      <label class="field" style="flex:1">
+        <span class="lbl">Brand</span>
+        <input class="input" id="brand" value="${editing ? h(row.brand || '') : ''}">
+      </label>
+      <label class="field" style="flex:1">
+        <span class="lbl">Category</span>
+        <input class="input" id="category" value="${editing ? h(row.category || '') : ''}">
+      </label>
+    </div>
+    <div class="row" style="gap:8px">
+      <label class="field" style="flex:1">
+        <span class="lbl">SKU</span>
+        <input class="input" id="sku" value="${editing ? h(row.sku) : ''}" placeholder="unique code">
+      </label>
+      <label class="field" style="flex:1">
+        <span class="lbl">Price</span>
+        <input class="input" id="price" type="number" min="0" step="0.01" value="${editing ? row.price : ''}">
+      </label>
+    </div>
+    ${!editing ? `
+    <label class="field">
+      <span class="lbl">Starting stock (optional)</span>
+      <input class="input" id="stock" type="number" min="0" step="1" value="0">
+    </label>` : ''}
+    <label class="field">
+      <span class="lbl">Variant label (optional)</span>
+      <input class="input" id="label" value="${editing ? h(row.label || '') : ''}" placeholder="e.g. Black - Size 9">
+    </label>
+    <label class="field">
+      <span class="lbl">Barcode (optional)</span>
+      <input class="input" id="barcode" value="${editing ? h(row.barcode || '') : ''}">
+    </label>
+    <div id="err" style="color:var(--danger);font-size:.82rem;margin:4px 0 10px"></div>
+    <button class="btn lg block" id="save">${editing ? 'Save changes' : 'Add product'}</button>
+    ${editing && may('product.delete')
+      ? '<button class="btn ghost block danger" id="del" style="margin-top:8px">Delete this variant</button>'
+      : ''}
+  `, {
+    onMount(panel, close) {
+      const err = panel.querySelector('#err');
+      const field = (id) => panel.querySelector('#' + id).value.trim();
+      const preview = panel.querySelector('#photoPreview');
+      const photoErr = panel.querySelector('#photoErr');
+
+      panel.querySelector('#photo').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        photoErr.textContent = '';
+        try {
+          photoDataUrl = await readPhoto(file);
+          preview.innerHTML = `<img src="${photoDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover">`;
+        } catch (ex) {
+          photoErr.textContent = ex.message;
+          e.target.value = '';
+        }
+      };
+
+      const removeBtn = panel.querySelector('#removePhoto');
+      if (removeBtn) {
+        removeBtn.onclick = () => {
+          photoDataUrl = '';
+          preview.innerHTML = svgIcon('box');
+          photoErr.textContent = '';
+        };
+      }
+
+      panel.querySelector('#save').onclick = async (e) => {
+        err.textContent = '';
+        const name = field('name');
+        const sku = field('sku');
+        if (!name) { err.textContent = 'A product needs a name.'; return; }
+        if (!sku) { err.textContent = 'A variant needs a SKU.'; return; }
+        e.currentTarget.disabled = true;
+        try {
+          const productFields = { name, brand: field('brand'), category: field('category') };
+          if (photoDataUrl !== null) productFields.image_url = photoDataUrl;
+          const variantFields = {
+            sku, label: field('label'), barcode: field('barcode'),
+            price: Number(panel.querySelector('#price').value || 0),
+          };
+          if (editing) {
+            await api.updateProduct(row.product_id, productFields);
+            await api.updateVariant(row.variant_id, variantFields);
+          } else {
+            const product = await api.createProduct(productFields);
+            const variant = await api.addVariant(product.id, variantFields);
+            // A fresh variant has no inventory row at all until stock moves
+            // for the first time -- going through moveStock rather than
+            // writing a starting count directly means this arrives on the
+            // shelf exactly the way any other delivery does: as a recorded
+            // movement, not a number that appeared from nowhere.
+            const startingStock = Number(panel.querySelector('#stock')?.value || 0);
+            if (startingStock > 0) {
+              await api.moveStock(variant.id, 'add', startingStock, 'Starting stock');
+            }
+          }
+          close();
+          toast(editing ? 'Product updated' : 'Product added', 'ok');
+          onDone && onDone();
+        } catch (ex) {
+          e.currentTarget.disabled = false;
+          err.textContent = ex.message;
+        }
+      };
+
+      const del = panel.querySelector('#del');
+      if (del) {
+        // Closed first, then confirmed: two full-screen sheets stacked on
+        // top of each other has never been exercised anywhere else in this
+        // app, so this does not become the first place it is tried.
+        del.onclick = async () => {
+          close();
+          const ok = await confirmSheet({
+            title: 'Delete this variant?',
+            body: 'It comes off the showcase and the till immediately. Stock history stays in the record.',
+            confirmLabel: 'Delete', danger: true,
+          });
+          if (!ok) return;
+          try {
+            await api.deleteVariant(row.variant_id);
+            toast('Variant deleted', 'ok');
+            onDone && onDone();
+          } catch (ex) { toast(ex.message, 'err'); }
+        };
+      }
+    },
+  });
+}
+
 /* ---------- scanner ---------- */
 
 export async function scanView(mount) {
@@ -436,12 +632,12 @@ export async function scanView(mount) {
       <div class="card pad" style="margin-top:14px">
         <label class="field">
           <span class="lbl">Barcode or SKU</span>
-          <input class="input" id="code" placeholder="e.g. NIK-AM-092 or 8901234500025" autocomplete="off">
+          <input class="input" id="code" placeholder="e.g. AML-GHEE-500 or 8901234500396" autocomplete="off">
         </label>
         <button class="btn block" id="go" style="margin-top:10px">Look up</button>
         <div class="chips" style="margin-top:10px">
-          <button class="chip" data-demo="NIK-AM-092">Demo: Nike Air Max</button>
-          <button class="chip" data-demo="8901234500070">Demo: Samsung charger</button>
+          <button class="chip" data-demo="AML-GHEE-500">Demo: Desi Cow Ghee</button>
+          <button class="chip" data-demo="8901234500424">Demo: Sunflower oil</button>
           <button class="chip" data-demo="RSV">Demo: reservation code</button>
         </div>
       </div>
@@ -483,7 +679,7 @@ export async function scanView(mount) {
               ${v.image_url ? `<img src="${h(v.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ''}
             </div>
             <div style="flex:1;min-width:0">
-              <div style="font-weight:800">✅ ${h(v.product_name)}</div>
+              <div style="font-weight:800">${svgIcon('check-circle')} ${h(v.product_name)}</div>
               <div style="font-size:.8rem;color:var(--muted)">${h(v.label)} · ${h(v.sku)}</div>
               <div style="font-weight:800;margin-top:4px">${money(v.price)}</div>
             </div>
@@ -500,7 +696,7 @@ export async function scanView(mount) {
       out.querySelector('#view').onclick = () => navigate(`/p/${v.product_id}`);
     } catch (err) {
       out.innerHTML = err.status === 404
-        ? empty({ icon: '🤷', title: 'No product matches that code', body: `Nothing in this store uses "${code}".` })
+        ? empty({ icon: svgIcon('question'), title: 'No product matches that code', body: `Nothing in this store uses "${code}".` })
         : errorBox(err.message);
     }
   }
@@ -531,7 +727,7 @@ export async function scanView(mount) {
       };
     } catch (err) {
       out.innerHTML = err.status === 404
-        ? empty({ icon: '🎟️', title: 'No reservation with that code', body: 'Check the code and try again.' })
+        ? empty({ icon: svgIcon('ticket'), title: 'No reservation with that code', body: 'Check the code and try again.' })
         : errorBox(err.message);
     }
   }
@@ -676,12 +872,12 @@ export async function auditView(mount) {
     try {
       const rows = await api.auditLog(outcome ? { outcome, limit: 100 } : { limit: 100 });
       if (!rows.length) {
-        list.innerHTML = empty({ icon: '🛡️', title: 'Nothing logged yet' });
+        list.innerHTML = empty({ icon: svgIcon('shield'), title: 'Nothing logged yet' });
         return;
       }
       list.innerHTML = `<div class="card pad"><ul class="tl">${rows.map((r) => `
         <li>
-          <span class="tl-ic">${r.outcome === 'denied' ? '⛔' : '✅'}</span>
+          <span class="tl-ic">${r.outcome === 'denied' ? svgIcon('blocked') : svgIcon('check-circle')}</span>
           <span class="tl-body">
             <span class="tl-top">
               <span class="tl-label">${h(r.action)}</span>
@@ -726,7 +922,7 @@ export async function analyticsView(mount) {
 
       <div class="sec">
         <div class="sec-head"><h2>Top products</h2></div>
-        <div class="card pad">${o.top_products.length ? rankedBars(o.top_products) : empty({ icon: '📊', title: 'No sales yet' })}</div>
+        <div class="card pad">${o.top_products.length ? rankedBars(o.top_products) : empty({ icon: svgIcon('chart-bar'), title: 'No sales yet' })}</div>
       </div>
 
       <div class="sec">
@@ -736,7 +932,7 @@ export async function analyticsView(mount) {
             <div class="thumb">${r.image_url ? `<img src="${h(r.image_url)}" alt="">` : ''}</div>
             <div class="meta"><span class="name">${h(r.product_name)}</span><span class="sku">${h(r.sku)}</span></div>
             ${statusLine(r)}
-          </div>`).join('') : empty({ icon: '✅', title: 'Everything is well stocked' })}</div>
+          </div>`).join('') : empty({ icon: svgIcon('check-circle'), title: 'Everything is well stocked' })}</div>
       </div>
 
       <div class="sec">
@@ -755,5 +951,136 @@ export async function analyticsView(mount) {
   } catch (err) {
     if (err.status === 401) return navigate('/store/login', { replace: true });
     body.innerHTML = errorBox(err.message);
+  }
+}
+
+/* ---------- settings ---------- */
+
+// Labels for the store types the backend knows about (services/store.py's
+// SHOWCASE_TYPES). A type the client has never heard of still shows, just
+// under its raw name, so a newer server never breaks an older client here.
+const TYPE_INFO = {
+  general: { icon: svgIcon('bag'), label: 'General store', blurb: 'A flat product grid — the default showcase.' },
+  grocery: { icon: svgIcon('cart'), label: 'Grocery', blurb: 'Products grouped into aisles by category.' },
+  mall: { icon: svgIcon('mall'), label: 'Mall', blurb: 'Products grouped into wings by brand/shop.' },
+};
+
+export async function settingsView(mount) {
+  if (!guard()) return;
+  if (!may('settings.view')) {
+    mount.innerHTML = `<div class="wrap" style="padding-top:16px">${
+      errorBox('You do not have access to store settings.')
+    }</div>`;
+    return;
+  }
+
+  mount.innerHTML = `<div class="wrap" style="padding-top:16px"><div id="body">${skeletonLines(4)}</div></div>`;
+  const body = mount.querySelector('#body');
+  const editable = may('settings.edit');
+  const s = state.store;
+  const types = Object.keys(TYPE_INFO).includes(s.type) ? Object.keys(TYPE_INFO) : [...Object.keys(TYPE_INFO), s.type];
+
+  body.innerHTML = `
+    <h2 style="margin-bottom:4px">Store settings</h2>
+    <p style="color:var(--muted);font-size:.86rem;margin-bottom:18px">
+      ${editable ? 'Changes apply to the customer showcase immediately.' : 'Read-only — ask an owner to make changes.'}
+    </p>
+
+    <div class="sec-head"><h2>Shop type</h2></div>
+    <p style="color:var(--muted);font-size:.82rem;margin-bottom:10px">Sets the whole layout customers browse — pick the one that matches this shop.</p>
+    <div class="stack" id="types" style="gap:8px;margin-bottom:22px"></div>
+
+    <div class="sec-head"><h2>Profile</h2></div>
+    <div class="card pad" style="margin-bottom:18px">
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Shop name</span>
+        <input class="input" id="f_name" value="${h(s.name)}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Tagline</span>
+        <input class="input" id="f_tagline" value="${h(s.tagline || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <div class="row" style="gap:10px;margin-bottom:12px">
+        <label class="field" style="flex:1">
+          <span class="lbl">Opens</span>
+          <input class="input" id="f_opens" type="time" value="${h(s.opens_at || '')}" ${editable ? '' : 'disabled'}>
+        </label>
+        <label class="field" style="flex:1">
+          <span class="lbl">Closes</span>
+          <input class="input" id="f_closes" type="time" value="${h(s.closes_at || '')}" ${editable ? '' : 'disabled'}>
+        </label>
+      </div>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Phone</span>
+        <input class="input" id="f_phone" value="${h(s.phone || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Email</span>
+        <input class="input" id="f_email" value="${h(s.email || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field" style="margin-bottom:12px">
+        <span class="lbl">Address</span>
+        <input class="input" id="f_address" value="${h(s.address || '')}" ${editable ? '' : 'disabled'}>
+      </label>
+      <label class="field">
+        <span class="lbl">Accent colour</span>
+        <input class="input" id="f_color" type="color" value="${h(s.accent_color || '#3d5afe')}" style="height:42px;padding:4px" ${editable ? '' : 'disabled'}>
+      </label>
+    </div>
+
+    ${editable ? '<button class="btn lg block" id="save">Save changes</button>' : ''}`;
+
+  let selectedType = s.type;
+  const drawTypes = () => {
+    body.querySelector('#types').innerHTML = types.map((t) => {
+      const info = TYPE_INFO[t] || { icon: svgIcon('question'), label: t, blurb: '' };
+      return `
+        <button class="modecard ${selectedType === t ? 'on' : ''}" data-type="${h(t)}" ${editable ? '' : 'disabled'}
+                style="${selectedType === t ? 'border-color:var(--accent);background:var(--info-bg)' : ''}">
+          <span class="ic">${info.icon}</span>
+          <span style="flex:1">
+            <span class="t">${h(info.label)}</span>
+            <span class="d">${h(info.blurb)}</span>
+          </span>
+          ${selectedType === t ? `<span style="color:var(--accent);font-weight:800">${svgIcon('check')}</span>` : ''}
+        </button>`;
+    }).join('');
+    if (editable) {
+      body.querySelectorAll('[data-type]').forEach((b) => {
+        b.onclick = () => { selectedType = b.dataset.type; drawTypes(); };
+      });
+    }
+  };
+  drawTypes();
+
+  const saveBtn = body.querySelector('#save');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const updated = await api.updateStore({
+          type: selectedType,
+          name: body.querySelector('#f_name').value,
+          tagline: body.querySelector('#f_tagline').value,
+          opens_at: body.querySelector('#f_opens').value,
+          closes_at: body.querySelector('#f_closes').value,
+          phone: body.querySelector('#f_phone').value,
+          email: body.querySelector('#f_email').value,
+          address: body.querySelector('#f_address').value,
+          accent_color: body.querySelector('#f_color').value,
+        });
+        state.store = updated;
+        if (updated.accent_color) {
+          document.documentElement.style.setProperty('--accent', updated.accent_color);
+        }
+        toast('Settings saved', 'ok');
+      } catch (err) {
+        toast(err.message, 'err');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save changes';
+      }
+    };
   }
 }
