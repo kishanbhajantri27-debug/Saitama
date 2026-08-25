@@ -193,6 +193,7 @@ CREATE TABLE IF NOT EXISTS orders (
   quantity INTEGER NOT NULL DEFAULT 1,
   total REAL NOT NULL DEFAULT 0,
   channel TEXT NOT NULL DEFAULT 'in-store',
+  refunded_at TEXT,                 -- set once, alongside a refunds row; NULL means still a live sale
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -213,6 +214,19 @@ CREATE TABLE IF NOT EXISTS invoices (
   order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
   number TEXT NOT NULL,
   amount REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A refund undoes a mock payment when a prepaid reservation is cancelled or
+-- rejected before pickup. The order and payment stay as history -- this is
+-- the record of the reversal itself, same mock-only footing as payments.
+CREATE TABLE IF NOT EXISTS refunds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id TEXT NOT NULL,
+  order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+  payment_id INTEGER REFERENCES payments(id) ON DELETE CASCADE,
+  amount REAL NOT NULL DEFAULT 0,
+  reason TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -258,6 +272,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_variant ON inventory(variant_id);
 CREATE INDEX IF NOT EXISTS idx_movements_variant ON inventory_movements(variant_id);
 CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id);
 """
 
 
@@ -284,7 +299,7 @@ def connect():
 SCHEMA_VERSION = 5
 
 TABLES = [
-    "hold_passes", "notifications", "wishlists", "invoices", "payments", "orders",
+    "hold_passes", "notifications", "wishlists", "refunds", "invoices", "payments", "orders",
     "reservations", "inventory_movements", "inventory", "product_variants",
     "products", "employees", "customers", "branches", "stores", "audit_log",
 ]
@@ -320,6 +335,10 @@ def _migrate_columns(conn):
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(reservations)")}
     if "prepaid" not in cols:
         conn.execute("ALTER TABLE reservations ADD COLUMN prepaid INTEGER NOT NULL DEFAULT 0")
+
+    order_cols = {r["name"] for r in conn.execute("PRAGMA table_info(orders)")}
+    if "refunded_at" not in order_cols:
+        conn.execute("ALTER TABLE orders ADD COLUMN refunded_at TEXT")
 
 
 def _drop_all(conn):

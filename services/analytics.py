@@ -12,7 +12,8 @@ from services import inventory, reservations
 def today():
     sales = db.query_one(
         """SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS orders
-           FROM orders WHERE store_id = ? AND date(created_at) = date('now')""",
+           FROM orders
+           WHERE store_id = ? AND date(created_at) = date('now') AND refunded_at IS NULL""",
         (config.STORE_ID,),
     )
     reservations.expire_due()
@@ -48,7 +49,7 @@ def sales_trend(days=7):
         for r in db.query(
             """SELECT date(created_at) AS day, SUM(total) AS revenue, COUNT(*) AS orders
                FROM orders
-               WHERE store_id = ? AND created_at >= datetime('now', ?)
+               WHERE store_id = ? AND created_at >= datetime('now', ?) AND refunded_at IS NULL
                GROUP BY date(created_at)""",
             (config.STORE_ID, f"-{days - 1} days"),
         )
@@ -68,7 +69,7 @@ def sales_trend(days=7):
 def top_products(limit=5):
     return db.query(
         """SELECT product_name, sku, SUM(quantity) AS units, SUM(total) AS revenue
-           FROM orders WHERE store_id = ?
+           FROM orders WHERE store_id = ? AND refunded_at IS NULL
            GROUP BY product_name, sku
            ORDER BY revenue DESC LIMIT ?""",
         (config.STORE_ID, limit),

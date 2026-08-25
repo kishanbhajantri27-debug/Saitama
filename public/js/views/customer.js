@@ -1423,6 +1423,14 @@ const STATUS_COPY = {
   cancelled: { icon: svgIcon('dot-neutral'), title: 'Cancelled', body: 'You cancelled this reservation.' },
 };
 
+// A bought item that never made it to pickup was already paid for, so
+// cancelling or being declined has to say more than a hold did -- the
+// money (mock, as ever) is going back too.
+const REFUNDED_COPY = {
+  rejected: { icon: svgIcon('dot-bad'), title: 'Declined — refunded', body: 'The store could not fulfil this one. You have been refunded (demo only).' },
+  cancelled: { icon: svgIcon('dot-neutral'), title: 'Cancelled — refunded', body: 'You cancelled this order and have been refunded (demo only).' },
+};
+
 export async function reservationView(mount, id) {
   const draw = async () => {
     let r;
@@ -1433,7 +1441,8 @@ export async function reservationView(mount, id) {
       return;
     }
 
-    const copy = STATUS_COPY[r.status] || STATUS_COPY.pending;
+    const refunded = r.prepaid && (r.status === 'cancelled' || r.status === 'rejected');
+    const copy = (refunded && REFUNDED_COPY[r.status]) || STATUS_COPY[r.status] || STATUS_COPY.pending;
     mount.innerHTML = `
       <div class="wrap" style="padding-top:18px">
         <div style="text-align:center;padding:8px 0 18px">
@@ -1462,7 +1471,7 @@ export async function reservationView(mount, id) {
           <div class="kv"><span class="k">Quantity</span><span class="v">${r.quantity}</span></div>
           <div class="kv"><span class="k">Total</span><span class="v">${money(r.price * r.quantity)}</span></div>
           <div class="kv"><span class="k">Status</span><span class="v"><span class="badge ${h(r.status)}">${h(r.status)}</span></span></div>
-          ${r.prepaid ? `<div class="kv"><span class="k">Payment</span><span class="v">Paid online (demo)</span></div>` : ''}
+          ${r.prepaid ? `<div class="kv"><span class="k">Payment</span><span class="v">${refunded ? 'Refunded (demo)' : 'Paid online (demo)'}</span></div>` : ''}
           <div class="kv"><span class="k">Pickup at</span><span class="v">${h(state.store?.name || '')}</span></div>
         </div>
 
@@ -1475,7 +1484,9 @@ export async function reservationView(mount, id) {
     if (cancelBtn) cancelBtn.onclick = async () => {
       const yes = await confirmSheet({
         title: 'Cancel this reservation?',
-        body: 'The item goes back on sale straight away.',
+        body: r.prepaid
+          ? 'The item goes back on sale straight away, and you will be refunded (demo only).'
+          : 'The item goes back on sale straight away.',
         confirmLabel: 'Cancel it', danger: true,
       });
       if (!yes) return;

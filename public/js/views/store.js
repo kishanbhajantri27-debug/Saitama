@@ -227,7 +227,11 @@ export async function reservationsView(mount) {
       <div class="row between" style="align-items:flex-start">
         <div style="min-width:0">
           <div class="row" style="gap:8px"><span class="badge ${h(r.status)}">${h(r.status.replace(/_/g, " "))}</span>
-            ${r.prepaid ? `<span class="badge ok">paid online</span>` : ''}
+            ${r.prepaid
+              ? (['cancelled', 'rejected'].includes(r.status)
+                  ? `<span class="badge neutral">refunded</span>`
+                  : `<span class="badge ok">paid online</span>`)
+              : ''}
             <span class="sku" style="font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted)">${h(r.code)}</span></div>
           <div style="font-weight:800;margin-top:8px">${h(r.customer_name)}</div>
           <div style="font-size:.84rem;color:var(--ink-2)">${h(r.product_name)} · ${h(r.variant_label)}</div>
@@ -249,7 +253,7 @@ export async function reservationsView(mount) {
         ${['pending', 'accepted'].includes(r.status) ? `<button class="btn sm soft" data-act="ready" data-id="${r.id}">Mark ready</button>` : ''}
         ${['accepted', 'ready_for_pickup'].includes(r.status) ? `<button class="btn sm ok" data-act="complete" data-id="${r.id}">Complete pickup</button>` : ''}
         ${r.is_open && may('reservation.reject')
-          ? `<button class="btn sm ghost" data-act="reject" data-id="${r.id}">Reject</button>` : ''}
+          ? `<button class="btn sm ghost" data-act="reject" data-id="${r.id}" data-prepaid="${r.prepaid ? '1' : ''}">Reject</button>` : ''}
       </div>
     </div>`;
 
@@ -260,7 +264,9 @@ export async function reservationsView(mount) {
         if (act === 'reject') {
           const yes = await confirmSheet({
             title: 'Reject this reservation?',
-            body: 'The customer is told and the stock goes back on sale.',
+            body: b.dataset.prepaid
+              ? 'The customer is told, the stock goes back on sale, and they are refunded (demo only).'
+              : 'The customer is told and the stock goes back on sale.',
             confirmLabel: 'Reject', danger: true,
           });
           if (!yes) return;

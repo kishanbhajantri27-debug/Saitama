@@ -117,6 +117,84 @@ class TestPickupAfterBuyNow:
         assert after["reserved"] == before["reserved"] - 1
 
 
+class TestRefundOnCancelledBuyNow:
+    def test_cancelling_refunds_the_payment(self, a_variant, a_customer):
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 2)
+        order = db.query_one(
+            "SELECT * FROM orders WHERE reservation_id = ?", (bought["id"],))
+        assert order["refunded_at"] is None
+
+        reservations.cancel(bought["id"], actor=None)
+
+        order = db.query_one("SELECT * FROM orders WHERE id = ?", (order["id"],))
+        assert order["refunded_at"] is not None
+        payment = db.query_one(
+            "SELECT * FROM payments WHERE order_id = ?", (order["id"],))
+        assert payment["status"] == "refunded"
+        refund = db.query_one(
+            "SELECT * FROM refunds WHERE order_id = ?", (order["id"],))
+        assert refund is not None
+        assert refund["amount"] == payment["amount"] == order["total"]
+        assert "cancelled" in refund["reason"]
+
+    def test_rejecting_refunds_the_payment_too(self, a_variant, a_customer, owner):
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 1)
+        reservations.reject(bought["id"], actor=owner)
+
+        payment = db.query_one(
+            """SELECT p.* FROM payments p JOIN orders o ON o.id = p.order_id
+               WHERE o.reservation_id = ?""", (bought["id"],))
+        assert payment["status"] == "refunded"
+
+    def test_an_unpaid_hold_is_not_refunded_because_nothing_was_charged(self, a_variant, a_customer):
+        """Regression: cancelling a normal (never-paid) hold must not touch
+        orders/payments/refunds at all -- there was never a sale to undo."""
+        held = reservations.create(a_variant["id"], a_customer["id"], 1)
+        reservations.cancel(held["id"])
+
+        assert not db.query("SELECT 1 FROM orders WHERE reservation_id = ?", (held["id"],))
+        assert not db.query("SELECT 1 FROM refunds")
+
+    def test_a_completed_pickup_has_nothing_to_refund_on_a_later_cancel_attempt(self, a_variant, a_customer, owner):
+        """Once picked up, the reservation is no longer open, so cancel/reject
+        are refused before any refund logic even runs (belt and braces:
+        _write_refund also no-ops if it somehow found a completed order)."""
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 1)
+        reservations.complete(bought["id"], actor=owner)
+
+        with pytest.raises(ReservationError):
+            reservations.cancel(bought["id"])
+
+    def test_refunded_revenue_drops_out_of_todays_sales(self, a_variant, a_customer):
+        from services import analytics
+
+        before = analytics.today()["revenue"]
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 1)
+        after_purchase = analytics.today()["revenue"]
+        assert after_purchase == round(before + a_variant["price"], 2)
+
+        reservations.cancel(bought["id"])
+        after_refund = analytics.today()["revenue"]
+        assert after_refund == before
+
+    def test_refunded_orders_drop_out_of_top_products_too(self, a_variant, a_customer):
+        """The seed data may already carry other, unrelated sales for this
+        same SKU, so the assertion is on the revenue this purchase added
+        being gone again -- not on the SKU vanishing from the list outright."""
+        from services import analytics
+
+        def revenue_for(sku):
+            row = next((p for p in analytics.top_products(limit=50) if p["sku"] == sku), None)
+            return row["revenue"] if row else 0
+
+        before = revenue_for(a_variant["sku"])
+        bought = reservations.buy_now(a_variant["id"], a_customer["id"], 1)
+        assert revenue_for(a_variant["sku"]) == round(before + a_variant["price"], 2)
+
+        reservations.cancel(bought["id"])
+        assert revenue_for(a_variant["sku"]) == before
+
+
 class TestBuyNowOverTheApi:
     def test_creates_a_ready_reservation(self, client, a_variant, a_customer):
         res = client.post("/api/reservations/buy-now", json={

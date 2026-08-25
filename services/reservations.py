@@ -246,6 +246,11 @@ def _set_status(reservation_id, new_status, release_stock=False, consume_stock=F
                 f"{new_status} {row['code']}", _name(actor), row["branch_id"],
                 reserved_delta=-row["quantity"], reservation_id=reservation_id)
 
+        # A prepaid item that never made it to pickup was paid for and then
+        # released -- the sale must be undone, not just the hold on the shelf.
+        if release_stock and row["prepaid"]:
+            _write_refund(conn, row, new_status)
+
         if consume_stock and stock:
             conn.execute(
                 """UPDATE inventory
@@ -313,6 +318,39 @@ def _write_sale(conn, reservation):
     )
 
 
+def _write_refund(conn, reservation, reason):
+    """Undo the sale a buy_now() purchase already wrote, when it is cancelled
+    or rejected before pickup.
+
+    The order and payment are left in place as history -- this only marks the
+    payment 'refunded' and the order's refunded_at, then adds a row recording
+    the reversal itself. Same mock footing as _write_sale(): no money moves,
+    this only says what would have happened. Guarded by refunded_at IS NULL
+    so calling this twice for the same order (there is no path that does, but
+    nothing else enforces it either) cannot refund it a second time.
+    """
+    order = conn.execute(
+        "SELECT * FROM orders WHERE reservation_id = ? AND refunded_at IS NULL",
+        (reservation["id"],),
+    ).fetchone()
+    if not order:
+        return
+    payment = conn.execute(
+        "SELECT * FROM payments WHERE order_id = ? AND status = 'captured'", (order["id"],)
+    ).fetchone()
+    if not payment:
+        return
+
+    conn.execute(
+        "UPDATE orders SET refunded_at = datetime('now') WHERE id = ?", (order["id"],))
+    conn.execute(
+        "UPDATE payments SET status = 'refunded' WHERE id = ?", (payment["id"],))
+    conn.execute(
+        "INSERT INTO refunds (store_id, order_id, payment_id, amount, reason) VALUES (?, ?, ?, ?, ?)",
+        (config.STORE_ID, order["id"], payment["id"], payment["amount"], f"{reason} before pickup"),
+    )
+
+
 def _require(reservation_id, allowed):
     row = db.query_one("SELECT * FROM reservations WHERE id = ?", (reservation_id,))
     if not row:
@@ -341,12 +379,21 @@ def mark_ready(reservation_id, actor=None):
     return result
 
 
+def _release_detail(result):
+    """Audit detail for a released hold, noting the refund when there was one
+    to issue -- a bought item does not just release stock, it un-sells it."""
+    detail = {"code": result["code"], "quantity": result["quantity"]}
+    if result["prepaid"]:
+        detail["refunded"] = round(result["price"] * result["quantity"], 2)
+    return detail
+
+
 def reject(reservation_id, actor=None):
     require(actor, "reservation.reject")
     _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
     result = _set_status(reservation_id, "rejected", release_stock=True, actor=actor)
     audit.record(actor, "reservation.reject", "reservation", reservation_id,
-                 {"code": result["code"], "quantity": result["quantity"]})
+                 _release_detail(result))
     return result
 
 
@@ -359,7 +406,7 @@ def cancel(reservation_id, actor=None):
     _require(reservation_id, ("pending", "accepted", "ready_for_pickup"))
     result = _set_status(reservation_id, "cancelled", release_stock=True, actor=actor)
     audit.record(actor, "reservation.cancel", "reservation", reservation_id,
-                 {"code": result["code"]})
+                 _release_detail(result))
     return result
 
 
